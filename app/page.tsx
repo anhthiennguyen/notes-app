@@ -6,6 +6,7 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
 import { FoldableHeading } from "@/lib/foldable-heading";
+import { Indent, CLEANUP_RULES } from "@/lib/indent";
 
 type NoteMeta = { id: number; title: string; updatedAt: string };
 type Note = NoteMeta & { content: string };
@@ -27,15 +28,38 @@ function Toolbar({
   editor,
   activeLevel,
   activeFontSize,
+  activeLineSpacing,
+  activeSpacingBefore,
+  activeSpacingAfter,
+  maxWidth,
+  onMaxWidthChange,
   tocVisible,
   onToggleToc,
 }: {
   editor: ReturnType<typeof useEditor> | null;
   activeLevel: number;
   activeFontSize: string;
+  activeLineSpacing: string;
+  activeSpacingBefore: string;
+  activeSpacingAfter: string;
+  maxWidth: number;
+  onMaxWidthChange: (v: number) => void;
   tocVisible: boolean;
   onToggleToc: () => void;
 }) {
+  const [paraSpacingOpen, setParaSpacingOpen] = useState(false);
+  const paraSpacingRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (paraSpacingRef.current && !paraSpacingRef.current.contains(e.target as Node)) {
+        setParaSpacingOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
   if (!editor) return null;
 
   function setFormat(value: number) {
@@ -87,6 +111,142 @@ function Toolbar({
           </option>
         ))}
       </select>
+
+      <select
+        value={activeLineSpacing}
+        onChange={(e) => {
+          if (!editor) return;
+          const val = e.target.value;
+          const cmd = editor.chain().focus() as any;
+          if (val) cmd.setLineSpacing(val).run();
+          else cmd.unsetLineSpacing().run();
+        }}
+        className="border border-zinc-300 rounded px-2 py-1 text-sm bg-white hover:bg-zinc-50 cursor-pointer outline-none w-24"
+      >
+        <option value="">Spacing</option>
+        {[["1", "Single"], ["1.15", "1.15"], ["1.5", "1.5×"], ["2", "Double"], ["2.5", "2.5×"], ["3", "Triple"]].map(([val, label]) => (
+          <option key={val} value={val}>{label}</option>
+        ))}
+      </select>
+
+      <div ref={paraSpacingRef} className="relative">
+        <button
+          onClick={() => setParaSpacingOpen((o) => !o)}
+          className={`px-3 py-1 rounded border text-sm transition-colors ${
+            paraSpacingOpen
+              ? "bg-zinc-900 text-white border-zinc-900"
+              : "border-zinc-300 hover:bg-zinc-100"
+          }`}
+          title="Paragraph spacing"
+        >
+          ¶
+        </button>
+        {paraSpacingOpen && (
+          <div className="absolute left-0 mt-1 bg-white border border-zinc-200 rounded shadow-md z-20 p-3 flex flex-col gap-2 w-48">
+            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Paragraph spacing</p>
+            <label className="text-xs text-zinc-500">Space before</label>
+            <select
+              value={activeSpacingBefore}
+              onChange={(e) => (editor.chain().focus() as any).setParaSpacing(e.target.value, activeSpacingAfter).run()}
+              className="border border-zinc-300 rounded px-2 py-1 text-sm bg-white outline-none"
+            >
+              <option value="">None</option>
+              {["4pt","8pt","12pt","16pt","24pt","32pt","48pt"].map(v => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+            <label className="text-xs text-zinc-500">Space after</label>
+            <select
+              value={activeSpacingAfter}
+              onChange={(e) => (editor.chain().focus() as any).setParaSpacing(activeSpacingBefore, e.target.value).run()}
+              className="border border-zinc-300 rounded px-2 py-1 text-sm bg-white outline-none"
+            >
+              <option value="">None</option>
+              {["4pt","8pt","12pt","16pt","24pt","32pt","48pt"].map(v => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={() => editor.chain().focus().selectAll().run()}
+        className="px-3 py-1 rounded border border-zinc-300 text-sm hover:bg-zinc-100 transition-colors"
+      >
+        Select all
+      </button>
+
+      <button
+        onClick={() => {
+          if (!editor) return;
+          const { state, view } = editor;
+
+          // Collect top-level blocks with positions
+          const blocks: { node: Parameters<Parameters<typeof state.doc.forEach>[0]>[0]; pos: number }[] = [];
+          state.doc.forEach((node, pos) => {
+            if (node.type.name === "paragraph" || node.type.name === "heading") {
+              blocks.push({ node, pos });
+            }
+          });
+
+          let tr = state.tr;
+          let offset = 0;
+
+          blocks.forEach(({ node, pos }, i) => {
+            const isFirst = i === 0;
+            const nextNode = blocks[i + 1]?.node;
+            const nextIsHeading = nextNode?.type.name === "heading";
+
+            const currentStartsBold = node.type.name === "paragraph" &&
+              node.firstChild?.marks.some((m: { type: { name: string } }) => m.type.name === "bold");
+            const isHeading = node.type.name === "heading";
+
+            const key = isHeading ? `heading_${node.attrs.level}` : "paragraph";
+            const rule = CLEANUP_RULES[key] ?? CLEANUP_RULES.paragraph;
+
+            tr = tr.setNodeMarkup(pos + offset, undefined, {
+              ...node.attrs,
+              indent: (isHeading || currentStartsBold) ? 0 : node.attrs.indent,
+              spacingBefore: isFirst ? null : rule.before,
+              spacingAfter: rule.after,
+            });
+
+            const nextStartsBold = nextNode?.type.name === "paragraph" &&
+              nextNode.firstChild?.marks.some((m: { type: { name: string } }) => m.type.name === "bold");
+
+            const isEmpty = node.type.name === "paragraph" && node.textContent.trim() === "";
+
+            if (node.type.name === "paragraph" && !currentStartsBold && !isEmpty && (nextIsHeading || nextStartsBold)) {
+              const emptyPara = state.schema.nodes.paragraph.create();
+              const insertAt = pos + offset + node.nodeSize;
+              tr = tr.insert(insertAt, emptyPara);
+              offset += emptyPara.nodeSize;
+            }
+          });
+
+          view.dispatch(tr);
+        }}
+        className="px-3 py-1 rounded border border-zinc-300 text-sm hover:bg-zinc-100 transition-colors"
+        title="Auto-space headings and paragraphs"
+      >
+        Clean up
+      </button>
+
+
+      <div className="flex items-center gap-1">
+        <label className="text-xs text-zinc-500 whitespace-nowrap">Width</label>
+        <input
+          type="number"
+          min={20}
+          max={200}
+          step={5}
+          value={maxWidth}
+          onChange={(e) => onMaxWidthChange(Number(e.target.value))}
+          className="border border-zinc-300 rounded px-2 py-1 text-sm w-16 outline-none"
+          title="Max content width (rem)"
+        />
+      </div>
 
       <button
         onClick={onToggleToc}
@@ -158,6 +318,10 @@ export default function Home() {
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [activeLevel, setActiveLevel] = useState(0);
   const [activeFontSize, setActiveFontSize] = useState("");
+  const [activeLineSpacing, setActiveLineSpacing] = useState("");
+  const [activeSpacingBefore, setActiveSpacingBefore] = useState("");
+  const [activeSpacingAfter, setActiveSpacingAfter] = useState("");
+  const [maxWidth, setMaxWidth] = useState(56);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -182,6 +346,7 @@ export default function Home() {
       FoldableHeading,
       TextStyle,
       FontSize,
+      Indent,
       Placeholder.configure({ placeholder: "Start writing…" }),
     ],
     content: "",
@@ -204,6 +369,10 @@ export default function Home() {
       )?.value ?? 0;
     setActiveLevel(level);
     setActiveFontSize(ed.getAttributes("textStyle").fontSize ?? "");
+    const node = ed.state.selection.$from.node();
+    setActiveLineSpacing(node?.attrs?.lineSpacing ?? "");
+    setActiveSpacingBefore(node?.attrs?.spacingBefore ?? "");
+    setActiveSpacingAfter(node?.attrs?.spacingAfter ?? "");
   }
 
   useEffect(() => {
@@ -283,6 +452,8 @@ export default function Home() {
       editor?.commands.clearContent();
     }
   }
+
+
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -437,6 +608,11 @@ export default function Home() {
               editor={editor}
               activeLevel={activeLevel}
               activeFontSize={activeFontSize}
+              activeLineSpacing={activeLineSpacing}
+              activeSpacingBefore={activeSpacingBefore}
+              activeSpacingAfter={activeSpacingAfter}
+              maxWidth={maxWidth}
+              onMaxWidthChange={setMaxWidth}
               tocVisible={tocVisible}
               onToggleToc={() => setTocVisible((v) => !v)}
             />
@@ -450,7 +626,8 @@ export default function Home() {
             <div className="flex-1 overflow-y-auto bg-white py-8">
               <EditorContent
                 editor={editor}
-                className="mx-auto bg-white prose prose-zinc max-w-4xl px-16 py-12 min-h-full focus:outline-none"
+                style={{ maxWidth: `${maxWidth}rem` }}
+                className="mx-auto bg-white prose prose-zinc px-16 py-12 min-h-full focus:outline-none"
               />
             </div>
           </>
