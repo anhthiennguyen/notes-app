@@ -1,4 +1,14 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+.tiptap.ProseMirror { outline: none; min-height: 100%; }
+.tiptap.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: #a1a1aa;
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
 
 :root {
   --background: #ffffff;
