@@ -10,6 +10,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
 import { FoldableHeading } from "@/lib/foldable-heading";
 import { Indent, CLEANUP_RULES } from "@/lib/indent";
+import PptxViewer from "./PptxViewer";
 
 type NoteMeta = { id: number; title: string; updatedAt: string };
 type Note = NoteMeta & { content: string; maxWidth?: number | null };
@@ -332,6 +333,9 @@ export default function NotebookPage() {
   const [zoom, setZoom] = useState(1);
   const [renamingNoteId, setRenamingNoteId] = useState<number | null>(null);
   const [renameVal, setRenameVal] = useState("");
+  const [fileViewerOpen, setFileViewerOpen] = useState(false);
+  const [fileViewerPos, setFileViewerPos] = useState(40);
+  const fileViewerDraggingRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -625,6 +629,13 @@ export default function NotebookPage() {
             ⬡
           </Link>
           <button
+            onClick={() => setFileViewerOpen((v) => !v)}
+            className={`text-sm border rounded px-3 py-1.5 transition-colors text-center ${fileViewerOpen ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100" : "border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-300"}`}
+            title="Open file viewer"
+          >
+            ⊞
+          </button>
+          <button
             onClick={newNote}
             className="flex-1 text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded px-3 py-1.5 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
           >
@@ -695,8 +706,37 @@ export default function NotebookPage() {
         </ul>
       </aside>
 
-      {/* Editor */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      {/* File viewer + editor split */}
+      <div className="flex flex-1 overflow-hidden">
+        {fileViewerOpen && (
+          <>
+            <div style={{ width: `${fileViewerPos}%` }} className="h-full shrink-0 overflow-hidden">
+              <PptxViewer onClose={() => setFileViewerOpen(false)} />
+            </div>
+            <div
+              className="w-1 bg-zinc-200 dark:bg-zinc-700 hover:bg-blue-400 cursor-col-resize shrink-0 transition-colors"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                fileViewerDraggingRef.current = true;
+                const onMove = (ev: MouseEvent) => {
+                  if (!fileViewerDraggingRef.current) return;
+                  const container = (e.target as HTMLElement).parentElement!;
+                  const rect = container.getBoundingClientRect();
+                  const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+                  setFileViewerPos(Math.min(80, Math.max(15, pct)));
+                };
+                const onUp = () => {
+                  fileViewerDraggingRef.current = false;
+                  window.removeEventListener("mousemove", onMove);
+                  window.removeEventListener("mouseup", onUp);
+                };
+                window.addEventListener("mousemove", onMove);
+                window.addEventListener("mouseup", onUp);
+              }}
+            />
+          </>
+        )}
+        <main className="flex-1 flex flex-col overflow-hidden">
         {activeNote ? (
           <>
             <div className="border-b border-zinc-200 dark:border-zinc-700 px-4 py-3 flex items-center gap-3">
@@ -829,6 +869,7 @@ export default function NotebookPage() {
           </div>
         )}
       </main>
+      </div>
     </div>
   );
 }
