@@ -135,6 +135,18 @@ function buildEnclosureLayer(
       .attr("stroke", kw.color).attr("stroke-width", 2.5).attr("stroke-opacity", 0.75)
       .attr("cursor", "grab")
       .attr("pointer-events", "all");
+    g.append("text")
+      .attr("class", "kw-enc-label")
+      .attr("data-id", kw.id)
+      .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
+      .attr("pointer-events", "none")
+      .attr("fill", kw.color)
+      .attr("fill-opacity", 0.45)
+      .attr("font-size", "11px")
+      .attr("font-weight", "600")
+      .attr("letter-spacing", "0.05em")
+      .text(kw.text);
   });
 }
 
@@ -301,8 +313,15 @@ export default function DiagramPage() {
         }
       });
       const hull = d3.polygonHull(pts);
-      if (hull) path.attr("d", enclosureLine(hull));
-      else path.attr("d", null);
+      const label = c.select<SVGTextElement>(`text.kw-enc-label[data-id="${kw.id}"]`);
+      if (hull) {
+        path.attr("d", enclosureLine(hull));
+        const centroid = d3.polygonCentroid(hull);
+        label.attr("x", centroid[0]).attr("y", centroid[1]).attr("display", null);
+      } else {
+        path.attr("d", null);
+        label.attr("display", "none");
+      }
     });
   });
   const [size, setSize] = useState({ w: 900, h: 700 });
