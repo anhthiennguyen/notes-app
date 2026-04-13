@@ -94,14 +94,45 @@ export default function PptxViewer({ onClose }: Props) {
           <div className="flex-1 overflow-auto flex items-start justify-center p-4">
             <div className="w-full">
               <SlideCanvas slide={slides[activeSlide]} aspectRatio={aspectRatio} />
-              <p className="text-center text-xs text-zinc-400 dark:text-zinc-500 mt-2">
-                Slide {activeSlide + 1} of {slides.length}
-              </p>
+              <div className="flex items-center justify-center gap-3 mt-2">
+                <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                  Slide {activeSlide + 1} of {slides.length}
+                </p>
+                <CopySlideTextButton slide={slides[activeSlide]} />
+              </div>
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function CopySlideTextButton({ slide }: { slide: SlideData }) {
+  const [copied, setCopied] = useState(false);
+
+  function copyText() {
+    const lines: string[] = [];
+    for (const shape of slide.shapes) {
+      if (shape.type !== "text") continue;
+      for (const para of shape.paragraphs) {
+        const line = para.runs.map((r) => r.text).join("").trim();
+        if (line) lines.push(line);
+      }
+    }
+    navigator.clipboard.writeText(lines.join("\n")).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+
+  return (
+    <button
+      onClick={copyText}
+      className="text-xs border border-zinc-300 dark:border-zinc-600 rounded px-2 py-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-300"
+    >
+      {copied ? "Copied!" : "Copy text"}
+    </button>
   );
 }
 

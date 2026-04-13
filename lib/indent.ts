@@ -162,13 +162,19 @@ export const Indent = Extension.create({
   addKeyboardShortcuts() {
     return {
       Tab: () => {
-        if (this.editor.isActive("listItem") || this.editor.isActive("taskItem")) {
+        if (this.editor.isActive("listItem")) {
+          return this.editor.commands.sinkListItem("listItem");
+        }
+        if (this.editor.isActive("taskItem")) {
           return false;
         }
         return this.editor.commands.increaseIndent();
       },
       "Shift-Tab": () => {
-        if (this.editor.isActive("listItem") || this.editor.isActive("taskItem")) {
+        if (this.editor.isActive("listItem")) {
+          return this.editor.commands.liftListItem("listItem");
+        }
+        if (this.editor.isActive("taskItem")) {
           return false;
         }
         return this.editor.commands.decreaseIndent();

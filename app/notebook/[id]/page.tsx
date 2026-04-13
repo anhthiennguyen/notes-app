@@ -172,6 +172,36 @@ function Toolbar({
       <button
         onClick={() => {
           if (!editor) return;
+          const { state } = editor;
+          const { from, to } = state.selection;
+          if (from === to) return;
+
+          const selectedText = state.doc.textBetween(from, to, " ");
+          const sentences = selectedText
+            .split(/(?<=[.!?])\s+/)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          if (sentences.length === 0) return;
+
+          const schema = state.schema;
+          const { bulletList, listItem, paragraph } = schema.nodes;
+          if (!bulletList || !listItem) return;
+
+          const items = sentences.map((sentence) =>
+            listItem.create({}, paragraph.create({}, schema.text(sentence)))
+          );
+          const list = bulletList.create({}, items);
+          editor.view.dispatch(state.tr.replaceWith(from, to, list));
+        }}
+        className={btn}
+        title="Convert selected sentences to bullet points"
+      >
+        Bulletize
+      </button>
+
+      <button
+        onClick={() => {
+          if (!editor) return;
           const { state, view } = editor;
 
           const blocks: { node: Parameters<Parameters<typeof state.doc.forEach>[0]>[0]; pos: number }[] = [];
