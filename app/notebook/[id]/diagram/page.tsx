@@ -44,9 +44,7 @@ function parseNoteHtml(html: string): RawItem[] {
     const tag = el.tagName.toLowerCase();
     const text = el.textContent?.trim() ?? "";
     if (!text) return;
-    if (/^h[1-6]$/.test(tag)) {
-      items.push({ id: `n${idx++}`, label: text, nodeType: tag });
-    } else if (tag === "p") {
+    if (tag === "p") {
       const boldText = [...el.querySelectorAll("strong, b")].map((s) => s.textContent ?? "").join("").trim();
       if (boldText.length > 0 && boldText.length >= text.length * 0.8)
         items.push({ id: `n${idx++}`, label: text, nodeType: "bold" });
