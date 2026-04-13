@@ -315,7 +315,7 @@ export default function DiagramPage() {
         b.label.toLowerCase().includes(kw.text.toLowerCase())
       );
       const path = c.select<SVGPathElement>(`path.kw-enc[data-id="${kw.id}"]`);
-      if (matching.length === 0) { path.attr("d", null); return; }
+      if (matching.length === 0) { path.attr("d", null); c.select<SVGTextElement>(`text.kw-enc-label[data-id="${kw.id}"]`).attr("display", "none"); return; }
       const pts: [number, number][] = [];
       matching.forEach((b) => {
         const cx = b.x ?? 0, cy = b.y ?? 0, r = b.radius + 18;
