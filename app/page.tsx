@@ -186,6 +186,18 @@ function Toolbar({
           blocks.forEach(({ node, pos }, i) => {
             const isFirst = i === 0;
             const nextNode = blocks[i + 1]?.node;
+
+            // Bold paragraphs preceded by a blank paragraph
+            const prevNode = blocks[i - 1]?.node;
+            const prevIsBlank = prevNode?.type.name === "paragraph" && prevNode.textContent.trim() === "";
+            if (prevIsBlank && node.type.name === "paragraph" && node.textContent.trim() !== "") {
+              const boldMark = state.schema.marks.bold;
+              if (boldMark) {
+                const from = pos + offset + 1;
+                const to = pos + offset + node.nodeSize - 1;
+                tr = tr.addMark(from, to, boldMark.create());
+              }
+            }
             const nextIsHeading = nextNode?.type.name === "heading";
 
             const currentStartsBold = node.type.name === "paragraph" &&
