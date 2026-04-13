@@ -3,6 +3,17 @@
 @custom-variant dark (&:is(.dark *));
 
 .tiptap.ProseMirror { outline: none; min-height: 100%; }
+
+@keyframes scroll-highlight {
+  0%   { background-color: transparent; }
+  5%   { background-color: #fef08a; }
+  90%  { background-color: #fef08a; }
+  100% { background-color: transparent; }
+}
+.scroll-highlight {
+  animation: scroll-highlight 60s ease-out forwards;
+  border-radius: 3px;
+}
 .tiptap.ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   color: #a1a1aa;

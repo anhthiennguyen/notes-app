@@ -300,6 +300,7 @@ export default function Home() {
   const { dark, toggle: toggleTheme } = useTheme();
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [pendingScroll, setPendingScroll] = useState<string | null>(null);
+  const [pendingNoteId, setPendingNoteId] = useState<number | null>(null);
   const [activeNote, setActiveNote] = useState<Note | null>(null);
   const [title, setTitle] = useState("");
   const [importing, setImporting] = useState(false);
@@ -369,18 +370,25 @@ export default function Home() {
     fetchNotes();
   }, []);
 
-  // Auto-open note from URL param (navigated from diagram page)
+  // Read URL params on mount — defer actual open until editor is ready
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const noteId = params.get("note");
     const scroll = params.get("scroll");
     if (noteId) {
-      openNote(parseInt(noteId, 10));
+      setPendingNoteId(parseInt(noteId, 10));
       if (scroll) setPendingScroll(decodeURIComponent(scroll));
       window.history.replaceState({}, "", window.location.pathname);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Open pending note once editor is initialised
+  useEffect(() => {
+    if (!editor || pendingNoteId === null) return;
+    openNote(pendingNoteId);
+    setPendingNoteId(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, pendingNoteId]);
 
   // Scroll to heading once editor + note are loaded
   useEffect(() => {
@@ -399,9 +407,12 @@ export default function Home() {
         }
       });
       if (found !== -1) {
-        editor.chain().focus().setTextSelection(found + 1).run();
         const dom = editor.view.nodeDOM(found);
-        if (dom instanceof Element) dom.scrollIntoView({ behavior: "smooth", block: "start" });
+        if (dom instanceof Element) {
+          dom.scrollIntoView({ behavior: "smooth", block: "center" });
+          dom.classList.add("scroll-highlight");
+          setTimeout(() => dom.classList.remove("scroll-highlight"), 60000);
+        }
       }
     }, 300);
   }, [pendingScroll, editor, activeNote]);

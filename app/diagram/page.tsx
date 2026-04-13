@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import * as d3 from "d3";
 import { useTheme } from "@/lib/theme";
@@ -227,7 +226,6 @@ function wrapLabel(text: string, radius: number): string[] {
 
 export default function DiagramPage() {
   const { dark, toggle: toggleTheme } = useTheme();
-  const router = useRouter();
 
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [activeNote, setActiveNote] = useState<Note | null>(null);
@@ -917,7 +915,7 @@ export default function DiagramPage() {
           <button
             onClick={() => {
               const noteId = activeNote?.id;
-              if (noteId) router.push(`/?note=${noteId}&scroll=${encodeURIComponent(contextMenu.bubble.label)}`);
+              if (noteId) window.location.href = `/?note=${noteId}&scroll=${encodeURIComponent(contextMenu.bubble.label)}`;
               setContextMenu(null);
             }}
             className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200 transition-colors"
