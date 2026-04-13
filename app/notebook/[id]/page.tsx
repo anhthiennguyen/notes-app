@@ -329,6 +329,9 @@ export default function NotebookPage() {
   const [activeSpacingAfter, setActiveSpacingAfter] = useState("");
   const [maxWidth, setMaxWidth] = useState(56);
   const [dirty, setDirty] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [renamingNoteId, setRenamingNoteId] = useState<number | null>(null);
+  const [renameVal, setRenameVal] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -523,6 +526,18 @@ export default function NotebookPage() {
     setDirty(true);
   }
 
+  async function commitRename(id: number) {
+    const newTitle = renameVal.trim() || "Untitled";
+    setRenamingNoteId(null);
+    await fetch(`/api/notes/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: newTitle }),
+    });
+    setNotes((prev) => prev.map((n) => n.id === id ? { ...n, title: newTitle } : n));
+    if (activeNote?.id === id) setTitle(newTitle);
+  }
+
   async function deleteNote(id: number) {
     await fetch(`/api/notes/${id}`, { method: "DELETE" });
     await fetchNotes();
@@ -627,14 +642,37 @@ export default function NotebookPage() {
           {notes.map((note) => (
             <li
               key={note.id}
-              onClick={() => openNote(note.id)}
+              onClick={() => renamingNoteId !== note.id && openNote(note.id)}
               className={`group flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 ${
                 activeNote?.id === note.id ? "bg-zinc-200 dark:bg-zinc-700" : ""
               }`}
             >
-              <span className="text-sm truncate flex-1 dark:text-zinc-200">
-                {note.title || "Untitled"}
-              </span>
+              {renamingNoteId === note.id ? (
+                <input
+                  autoFocus
+                  value={renameVal}
+                  onChange={(e) => setRenameVal(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") commitRename(note.id);
+                    if (e.key === "Escape") setRenamingNoteId(null);
+                    e.stopPropagation();
+                  }}
+                  onBlur={() => commitRename(note.id)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-sm flex-1 bg-transparent outline-none border-b border-zinc-400 dark:border-zinc-500 dark:text-zinc-100 min-w-0"
+                />
+              ) : (
+                <span
+                  className="text-sm truncate flex-1 dark:text-zinc-200"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setRenamingNoteId(note.id);
+                    setRenameVal(note.title || "Untitled");
+                  }}
+                >
+                  {note.title || "Untitled"}
+                </span>
+              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -665,6 +703,7 @@ export default function NotebookPage() {
                 value={title}
                 onChange={handleTitleChange}
                 onKeyDown={(e) => e.key === "Enter" && save()}
+                onBlur={save}
                 placeholder="Note title"
                 className="flex-1 text-xl font-semibold outline-none bg-transparent placeholder-zinc-300 dark:placeholder-zinc-600 dark:text-zinc-100"
               />
@@ -726,12 +765,36 @@ export default function NotebookPage() {
               <TableOfContents headings={headings} onJump={jumpToHeading} />
             )}
 
-            <div className="flex-1 overflow-y-auto bg-zinc-100 dark:bg-zinc-950 py-8">
+            <div className="flex-1 overflow-y-auto bg-zinc-100 dark:bg-zinc-950 py-8 relative">
               <EditorContent
                 editor={editor}
-                style={{ maxWidth: `${maxWidth}rem` }}
+                style={{ maxWidth: `${maxWidth}rem`, zoom }}
                 className="mx-auto bg-white dark:bg-zinc-900 prose prose-zinc dark:prose-invert px-16 py-12 min-h-full focus:outline-none"
               />
+              {/* Zoom slider */}
+              <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm">
+                <button
+                  onClick={() => setZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
+                  className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
+                >−</button>
+                <input
+                  type="range"
+                  min={0.25} max={3} step={0.05}
+                  value={zoom}
+                  onChange={(e) => setZoom(+e.target.value)}
+                  className="w-24 accent-zinc-600 dark:accent-zinc-400 cursor-pointer"
+                />
+                <button
+                  onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))}
+                  className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
+                >+</button>
+                <span className="text-xs text-zinc-400 dark:text-zinc-500 w-8 text-right tabular-nums">{Math.round(zoom * 100)}%</span>
+                <button
+                  onClick={() => setZoom(1)}
+                  className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+                  title="Reset zoom"
+                >↺</button>
+              </div>
             </div>
           </>
         ) : (
