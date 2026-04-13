@@ -7,22 +7,35 @@ datasource db {
   provider = "sqlite"
 }
 
+model Notebook {
+  id              Int              @id @default(autoincrement())
+  name            String           @default("Untitled Notebook")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  notes           Note[]
+  diagramKeywords DiagramKeyword[]
+}
+
 model Note {
-  id        Int      @id @default(autoincrement())
-  title     String   @default("Untitled")
-  content   String   @default("")
-  maxWidth  Int?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           Int       @id @default(autoincrement())
+  title        String    @default("Untitled")
+  content      String    @default("")
+  maxWidth     Int?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  notebookId   Int?
+  notebook     Notebook? @relation(fields: [notebookId], references: [id])
 }
 
 model DiagramKeyword {
-  id       String  @id @default(uuid())
-  text     String
-  color    String
-  x        Float?
-  y        Float?
-  category String?
+  id         String   @id @default(uuid())
+  text       String
+  color      String
+  x          Float?
+  y          Float?
+  category   String?
+  notebookId Int?
+  notebook   Notebook? @relation(fields: [notebookId], references: [id])
 }
 
 model TermDefinition {

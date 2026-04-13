@@ -1,9 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const notebookId = req.nextUrl.searchParams.get("notebookId");
     const notes = await prisma.note.findMany({
+      where: notebookId ? { notebookId: Number(notebookId) } : undefined,
       orderBy: { updatedAt: "desc" },
       select: { id: true, title: true, updatedAt: true },
     });
@@ -14,7 +16,12 @@ export async function GET() {
   }
 }
 
-export async function POST() {
-  const note = await prisma.note.create({ data: {} });
+export async function POST(req: NextRequest) {
+  const body = await req.json().catch(() => ({}));
+  const note = await prisma.note.create({
+    data: {
+      ...(body.notebookId !== undefined && { notebookId: Number(body.notebookId) }),
+    },
+  });
   return NextResponse.json(note, { status: 201 });
 }

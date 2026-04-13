@@ -1,757 +1,171 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useTheme } from "@/lib/theme";
-import { useEditor, EditorContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import Placeholder from "@tiptap/extension-placeholder";
-import { TextStyle, FontSize } from "@tiptap/extension-text-style";
-import { FoldableHeading } from "@/lib/foldable-heading";
-import { Indent, CLEANUP_RULES } from "@/lib/indent";
 
-type NoteMeta = { id: number; title: string; updatedAt: string };
-type Note = NoteMeta & { content: string; maxWidth?: number | null };
-type HeadingEntry = { level: number; text: string; pos: number };
-
-// ── Heading dropdown ────────────────────────────────────────────────────────
-
-const HEADING_OPTIONS = [
-  { label: "Paragraph", value: 0 },
-  { label: "Heading 1", value: 1 },
-  { label: "Heading 2", value: 2 },
-  { label: "Heading 3", value: 3 },
-  { label: "Heading 4", value: 4 },
-  { label: "Heading 5", value: 5 },
-  { label: "Heading 6", value: 6 },
-];
-
-function Toolbar({
-  editor,
-  activeLevel,
-  activeFontSize,
-  activeLineSpacing,
-  activeSpacingBefore,
-  activeSpacingAfter,
-  maxWidth,
-  onMaxWidthChange,
-  tocVisible,
-  onToggleToc,
-}: {
-  editor: ReturnType<typeof useEditor> | null;
-  activeLevel: number;
-  activeFontSize: string;
-  activeLineSpacing: string;
-  activeSpacingBefore: string;
-  activeSpacingAfter: string;
-  maxWidth: number;
-  onMaxWidthChange: (v: number) => void;
-  tocVisible: boolean;
-  onToggleToc: () => void;
-}) {
-  const [paraSpacingOpen, setParaSpacingOpen] = useState(false);
-  const paraSpacingRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (paraSpacingRef.current && !paraSpacingRef.current.contains(e.target as Node)) {
-        setParaSpacingOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, []);
-
-  if (!editor) return null;
-
-  function setFormat(value: number) {
-    if (!editor) return;
-    if (value === 0) {
-      editor.chain().focus().setParagraph().run();
-    } else {
-      editor
-        .chain()
-        .focus()
-        .toggleHeading({ level: value as 1 | 2 | 3 | 4 | 5 | 6 })
-        .run();
-    }
-  }
-
-  function handleFontSize(val: string) {
-    if (!editor) return;
-    const chain = editor.chain().focus() as any;
-    if (val) {
-      chain.setFontSize(val).run();
-    } else {
-      chain.unsetFontSize().run();
-    }
-  }
-
-  const sel = "border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 text-sm bg-white dark:bg-zinc-800 dark:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer outline-none";
-  const btn = "px-3 py-1 rounded border border-zinc-300 dark:border-zinc-600 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-200";
-
-  return (
-    <div className="flex items-center gap-3 px-8 py-2 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-sm">
-      <select value={activeLevel} onChange={(e) => setFormat(Number(e.target.value))} className={sel}>
-        {HEADING_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-
-      <select value={activeFontSize} onChange={(e) => handleFontSize(e.target.value)} className={`${sel} w-20`}>
-        <option value="">Size</option>
-        {[10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64].map((s) => (
-          <option key={s} value={`${s}px`}>{s}</option>
-        ))}
-      </select>
-
-      <select
-        value={activeLineSpacing}
-        onChange={(e) => {
-          if (!editor) return;
-          const val = e.target.value;
-          const cmd = editor.chain().focus() as any;
-          if (val) cmd.setLineSpacing(val).run();
-          else cmd.unsetLineSpacing().run();
-        }}
-        className={`${sel} w-24`}
-      >
-        <option value="">Spacing</option>
-        {[["1", "Single"], ["1.15", "1.15"], ["1.5", "1.5×"], ["2", "Double"], ["2.5", "2.5×"], ["3", "Triple"]].map(([val, label]) => (
-          <option key={val} value={val}>{label}</option>
-        ))}
-      </select>
-
-      <div ref={paraSpacingRef} className="relative">
-        <button
-          onClick={() => setParaSpacingOpen((o) => !o)}
-          className={`px-3 py-1 rounded border text-sm transition-colors ${
-            paraSpacingOpen
-              ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100"
-              : "border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200"
-          }`}
-          title="Paragraph spacing"
-        >
-          ¶
-        </button>
-        {paraSpacingOpen && (
-          <div className="absolute left-0 mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded shadow-md z-20 p-3 flex flex-col gap-2 w-48">
-            <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">Paragraph spacing</p>
-            <label className="text-xs text-zinc-500 dark:text-zinc-400">Space before</label>
-            <select
-              value={activeSpacingBefore}
-              onChange={(e) => (editor.chain().focus() as any).setParaSpacing(e.target.value, activeSpacingAfter).run()}
-              className={sel}
-            >
-              <option value="">None</option>
-              {["4pt","8pt","12pt","16pt","24pt","32pt","48pt"].map(v => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
-            <label className="text-xs text-zinc-500 dark:text-zinc-400">Space after</label>
-            <select
-              value={activeSpacingAfter}
-              onChange={(e) => (editor.chain().focus() as any).setParaSpacing(activeSpacingBefore, e.target.value).run()}
-              className={sel}
-            >
-              <option value="">None</option>
-              {["4pt","8pt","12pt","16pt","24pt","32pt","48pt"].map(v => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-
-      <button onClick={() => editor.chain().focus().selectAll().run()} className={btn}>
-        Select all
-      </button>
-
-      <button
-        onClick={() => {
-          if (!editor) return;
-          const { state, view } = editor;
-
-          // Collect top-level blocks with positions
-          const blocks: { node: Parameters<Parameters<typeof state.doc.forEach>[0]>[0]; pos: number }[] = [];
-          state.doc.forEach((node, pos) => {
-            if (node.type.name === "paragraph" || node.type.name === "heading") {
-              blocks.push({ node, pos });
-            }
-          });
-
-          let tr = state.tr;
-          let offset = 0;
-
-          blocks.forEach(({ node, pos }, i) => {
-            const isFirst = i === 0;
-            const nextNode = blocks[i + 1]?.node;
-
-            // Bold paragraphs preceded by a blank paragraph
-            const prevNode = blocks[i - 1]?.node;
-            const prevIsBlank = prevNode?.type.name === "paragraph" && prevNode.textContent.trim() === "";
-            if (prevIsBlank && node.type.name === "paragraph" && node.textContent.trim() !== "") {
-              const boldMark = state.schema.marks.bold;
-              if (boldMark) {
-                const from = pos + offset + 1;
-                const to = pos + offset + node.nodeSize - 1;
-                tr = tr.addMark(from, to, boldMark.create());
-              }
-            }
-            const nextIsHeading = nextNode?.type.name === "heading";
-
-            const currentStartsBold = node.type.name === "paragraph" &&
-              node.firstChild?.marks.some((m: { type: { name: string } }) => m.type.name === "bold");
-            const isHeading = node.type.name === "heading";
-
-            const key = isHeading ? `heading_${node.attrs.level}` : "paragraph";
-            const rule = CLEANUP_RULES[key] ?? CLEANUP_RULES.paragraph;
-
-            tr = tr.setNodeMarkup(pos + offset, undefined, {
-              ...node.attrs,
-              indent: (isHeading || currentStartsBold) ? 0 : node.attrs.indent,
-              spacingBefore: isFirst ? null : rule.before,
-              spacingAfter: rule.after,
-            });
-
-            const nextStartsBold = nextNode?.type.name === "paragraph" &&
-              nextNode.firstChild?.marks.some((m: { type: { name: string } }) => m.type.name === "bold");
-
-            const isEmpty = node.type.name === "paragraph" && node.textContent.trim() === "";
-
-            if (node.type.name === "paragraph" && !currentStartsBold && !isEmpty && (nextIsHeading || nextStartsBold)) {
-              const emptyPara = state.schema.nodes.paragraph.create();
-              const insertAt = pos + offset + node.nodeSize;
-              tr = tr.insert(insertAt, emptyPara);
-              offset += emptyPara.nodeSize;
-            }
-          });
-
-          view.dispatch(tr);
-        }}
-        className={btn}
-        title="Auto-space headings and paragraphs"
-      >
-        Clean up
-      </button>
-
-      <div className="flex items-center gap-1">
-        <label className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap">Width</label>
-        <input
-          type="number"
-          min={20}
-          max={200}
-          step={5}
-          value={maxWidth}
-          onChange={(e) => onMaxWidthChange(Number(e.target.value))}
-          className="border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 text-sm w-16 outline-none bg-white dark:bg-zinc-800 dark:text-zinc-100"
-          title="Max content width (rem)"
-        />
-      </div>
-
-      <button
-        onClick={onToggleToc}
-        className={`px-3 py-1 rounded border text-sm transition-colors ${
-          tocVisible
-            ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100"
-            : "border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200"
-        }`}
-      >
-        Contents
-      </button>
-    </div>
-  );
-}
-
-// ── Table of contents ────────────────────────────────────────────────────────
-
-function TableOfContents({
-  headings,
-  onJump,
-}: {
-  headings: HeadingEntry[];
-  onJump: (pos: number) => void;
-}) {
-  if (headings.length === 0) {
-    return (
-      <div className="px-8 py-3 text-zinc-400 dark:text-zinc-500 text-sm border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 italic">
-        No headings yet — add Heading 1/2/3 to populate the table of contents.
-      </div>
-    );
-  }
-
-  const minLevel = Math.min(...headings.map((h) => h.level));
-
-  return (
-    <div className="px-8 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900">
-      <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">
-        Table of Contents
-      </p>
-      <ul className="space-y-0.5">
-        {headings.map((h, i) => (
-          <li
-            key={i}
-            style={{ paddingLeft: `${(h.level - minLevel) * 16}px` }}
-          >
-            <button
-              onClick={() => onJump(h.pos)}
-              className="text-sm text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:underline text-left truncate max-w-full"
-            >
-              {h.text}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-// ── Main page ────────────────────────────────────────────────────────────────
+type Notebook = {
+  id: number;
+  name: string;
+  updatedAt: string;
+  _count: { notes: number };
+};
 
 export default function Home() {
+  const router = useRouter();
   const { dark, toggle: toggleTheme } = useTheme();
-  const [notes, setNotes] = useState<NoteMeta[]>([]);
-  const [pendingScroll, setPendingScroll] = useState<string | null>(null);
-  const [pendingNoteId, setPendingNoteId] = useState<number | null>(null);
-  const [activeNote, setActiveNote] = useState<Note | null>(null);
-  const [title, setTitle] = useState("");
-  const [importing, setImporting] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
-  const [tocVisible, setTocVisible] = useState(false);
-  const [headings, setHeadings] = useState<HeadingEntry[]>([]);
-  const [sidebarVisible, setSidebarVisible] = useState(true);
-  const [activeLevel, setActiveLevel] = useState(0);
-  const [activeFontSize, setActiveFontSize] = useState("");
-  const [activeLineSpacing, setActiveLineSpacing] = useState("");
-  const [activeSpacingBefore, setActiveSpacingBefore] = useState("");
-  const [activeSpacingAfter, setActiveSpacingAfter] = useState("");
-  const [maxWidth, setMaxWidth] = useState(56);
-  const [dirty, setDirty] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const exportRef = useRef<HTMLDivElement>(null);
-
-  const extractHeadings = useCallback(
-    (ed: NonNullable<ReturnType<typeof useEditor>>) => {
-      const found: HeadingEntry[] = [];
-      ed.state.doc.forEach((node, offset) => {
-        if (node.type.name === "heading") {
-          found.push({ level: node.attrs.level, text: node.textContent, pos: offset });
-        }
-      });
-      setHeadings(found);
-    },
-    []
-  );
-
-  const editor = useEditor({
-    immediatelyRender: false,
-    extensions: [
-      StarterKit.configure({ heading: false }),
-      FoldableHeading,
-      TextStyle,
-      FontSize,
-      Indent,
-      Placeholder.configure({ placeholder: "Start writing…" }),
-    ],
-    content: "",
-    onUpdate({ editor }) {
-      if (!activeNote) return;
-      setDirty(true);
-      extractHeadings(editor);
-      syncToolbarState(editor);
-    },
-    onSelectionUpdate({ editor }) {
-      syncToolbarState(editor);
-    },
-  });
-
-  function syncToolbarState(ed: NonNullable<ReturnType<typeof useEditor>>) {
-    const level =
-      HEADING_OPTIONS.find(
-        (o) => o.value !== 0 && ed.isActive("heading", { level: o.value })
-      )?.value ?? 0;
-    setActiveLevel(level);
-    setActiveFontSize(ed.getAttributes("textStyle").fontSize ?? "");
-    const node = ed.state.selection.$from.node();
-    setActiveLineSpacing(node?.attrs?.lineSpacing ?? "");
-    setActiveSpacingBefore(node?.attrs?.spacingBefore ?? "");
-    setActiveSpacingAfter(node?.attrs?.spacingAfter ?? "");
-  }
+  const [notebooks, setNotebooks] = useState<Notebook[]>([]);
+  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renameVal, setRenameVal] = useState("");
+  const renameRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetchNotes();
-  }, []);
-
-  // Read URL params on mount — defer actual open until editor is ready
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const noteId = params.get("note");
-    const scroll = params.get("scroll");
-    if (noteId) {
-      setPendingNoteId(parseInt(noteId, 10));
-      if (scroll) setPendingScroll(decodeURIComponent(scroll));
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-  }, []);
-
-  // Open pending note once editor is initialised
-  useEffect(() => {
-    if (!editor || pendingNoteId === null) return;
-    openNote(pendingNoteId);
-    setPendingNoteId(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, pendingNoteId]);
-
-  // Scroll to heading once editor + note are loaded
-  useEffect(() => {
-    if (!pendingScroll || !editor || !activeNote) return;
-    const target = pendingScroll;
-    setPendingScroll(null);
-    setTimeout(() => {
-      let found = -1;
-      editor.state.doc.forEach((node, pos) => {
-        if (found !== -1) return;
-        if (
-          (node.type.name === "heading" || node.type.name === "paragraph") &&
-          node.textContent.toLowerCase().includes(target.toLowerCase())
-        ) {
-          found = pos;
-        }
-      });
-      if (found !== -1) {
-        const node = editor.state.doc.nodeAt(found);
-        const from = found + 1;
-        const to = found + 1 + (node?.content.size ?? 0);
-        const dom = editor.view.nodeDOM(found);
-        if (dom instanceof Element) {
-          dom.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-        editor.chain().focus().setTextSelection({ from, to }).run();
-      }
-    }, 300);
-  }, [pendingScroll, editor, activeNote]);
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
-        setExportOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
+    fetchNotebooks();
   }, []);
 
   useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
-        e.preventDefault();
-        save();
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, activeNote, title, editor]);
+    if (renamingId !== null) renameRef.current?.focus();
+  }, [renamingId]);
 
-  // Debounce-save maxWidth when it changes
-  useEffect(() => {
-    if (!activeNote) return;
-    const id = activeNote.id;
-    const t = setTimeout(() => {
-      fetch(`/api/notes/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ maxWidth }),
-      });
-    }, 500);
-    return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [maxWidth]);
-
-  async function fetchNotes() {
-    const res = await fetch("/api/notes");
+  async function fetchNotebooks() {
+    const res = await fetch("/api/notebooks");
     const data = await res.json();
-    const list = Array.isArray(data) ? data : [];
-    setNotes(list);
-    return list as NoteMeta[];
+    setNotebooks(Array.isArray(data) ? data : []);
   }
 
-  async function openNote(id: number) {
-    const res = await fetch(`/api/notes/${id}`);
-    const note: Note = await res.json();
-    setActiveNote(note);
-    setTitle(note.title);
-    setMaxWidth(note.maxWidth ?? 56);
-    setDirty(false);
-    editor?.commands.setContent(note.content);
-    if (editor) extractHeadings(editor);
+  async function createNotebook() {
+    const res = await fetch("/api/notebooks", { method: "POST" });
+    const nb: Notebook = await res.json();
+    await fetchNotebooks();
+    // Start renaming immediately
+    setRenamingId(nb.id);
+    setRenameVal("Untitled Notebook");
   }
 
-  async function newNote() {
-    const res = await fetch("/api/notes", { method: "POST" });
-    const note: Note = await res.json();
-    const updated = await fetchNotes();
-    setNotes(updated);
-    openNote(note.id);
-  }
-
-  async function save() {
-    if (!activeNote || !editor) return;
-    const data = { title, content: editor.getHTML() };
-    await fetch(`/api/notes/${activeNote.id}`, {
+  async function renameNotebook(id: number) {
+    const name = renameVal.trim() || "Untitled Notebook";
+    await fetch(`/api/notebooks/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ name }),
     });
-    setDirty(false);
-    setNotes((prev) =>
-      prev.map((n) =>
-        n.id === activeNote.id
-          ? { ...n, ...data, updatedAt: new Date().toISOString() }
-          : n
-      )
-    );
+    setRenamingId(null);
+    setRenameVal("");
+    fetchNotebooks();
   }
 
-  function handleTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setTitle(e.target.value);
-    setDirty(true);
-  }
-
-  async function deleteNote(id: number) {
-    await fetch(`/api/notes/${id}`, { method: "DELETE" });
-    const updated = await fetchNotes();
-    setNotes(updated);
-    if (activeNote?.id === id) {
-      setActiveNote(null);
-      setTitle("");
-      setHeadings([]);
-      editor?.commands.clearContent();
-    }
-  }
-
-
-
-  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImporting(true);
-    const form = new FormData();
-    form.append("file", file);
-    const res = await fetch("/api/import", { method: "POST", body: form });
-    if (res.ok) {
-      const note: Note = await res.json();
-      const updated = await fetchNotes();
-      setNotes(updated);
-      openNote(note.id);
-    }
-    setImporting(false);
-    e.target.value = "";
-  }
-
-  function exportNote(format: "pdf" | "docx") {
-    if (!activeNote) return;
-    setExportOpen(false);
-    window.location.href = `/api/export/${activeNote.id}?format=${format}`;
-  }
-
-  function jumpToHeading(pos: number) {
-    if (!editor) return;
-
-    // Unfold any parent headings that are hiding the target
-    const { state } = editor;
-    let tr = state.tr;
-    let changed = false;
-
-    state.doc.forEach((node, nodePos) => {
-      if (nodePos >= pos) return false;
-      if (node.type.name === "heading" && node.attrs.folded) {
-        tr = tr.setNodeMarkup(nodePos, undefined, { ...node.attrs, folded: false });
-        changed = true;
-      }
-    });
-
-    if (changed) editor.view.dispatch(tr);
-
-    setTimeout(() => {
-      editor.chain().focus().setTextSelection(pos + 1).run();
-      const dom = editor.view.nodeDOM(pos);
-      if (dom instanceof Element) {
-        dom.scrollIntoView({ behavior: "smooth", block: "start" });
-      }
-    }, changed ? 50 : 0);
+  async function deleteNotebook(id: number) {
+    await fetch(`/api/notebooks/${id}`, { method: "DELETE" });
+    fetchNotebooks();
   }
 
   return (
-    <div className="flex h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-sans">
-      {/* Sidebar */}
-      <aside className={`flex flex-col border-r border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 transition-all duration-200 overflow-hidden ${sidebarVisible ? "w-64" : "w-0"}`}>
-        <div className="p-3 flex gap-2 border-b border-zinc-200 dark:border-zinc-700">
-          <Link
-            href="/diagram"
-            className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors text-center dark:text-zinc-300"
-            title="Open diagram view"
-          >
-            ⬡
-          </Link>
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-sans">
+      {/* Header */}
+      <header className="px-10 py-6 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800">
+        <h1 className="text-xl font-semibold tracking-tight">Notebooks</h1>
+        <div className="flex items-center gap-3">
           <button
-            onClick={newNote}
-            className="flex-1 text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded px-3 py-1.5 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
+            onClick={toggleTheme}
+            className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-300"
+            title="Toggle dark mode"
           >
-            New note
+            {dark ? "☀" : "☾"}
           </button>
           <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
-            className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-300 transition-colors disabled:opacity-50"
-            title="Import PDF or Word doc"
+            onClick={createNotebook}
+            className="text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded px-4 py-1.5 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
           >
-            {importing ? "…" : "Import"}
+            + New Notebook
           </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.docx"
-            className="hidden"
-            onChange={handleImport}
-          />
         </div>
-        <ul className="flex-1 overflow-y-auto">
-          {notes.map((note) => (
-            <li
-              key={note.id}
-              onClick={() => openNote(note.id)}
-              className={`group flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 ${
-                activeNote?.id === note.id ? "bg-zinc-200 dark:bg-zinc-700" : ""
-              }`}
-            >
-              <span className="text-sm truncate flex-1 dark:text-zinc-200">
-                {note.title || "Untitled"}
-              </span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteNote(note.id);
-                }}
-                className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500 ml-2 text-xs transition-opacity"
-              >
-                ✕
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
+      </header>
 
-      {/* Editor */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        {activeNote ? (
-          <>
-            {/* Title + export */}
-            <div className="border-b border-zinc-200 dark:border-zinc-700 px-4 py-3 flex items-center gap-3">
-              <button
-                onClick={() => setSidebarVisible((v) => !v)}
-                className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors shrink-0"
-                title={sidebarVisible ? "Hide sidebar" : "Show sidebar"}
-              >
-                ☰
-              </button>
-              <input
-                value={title}
-                onChange={handleTitleChange}
-                onKeyDown={(e) => e.key === "Enter" && save()}
-                placeholder="Note title"
-                className="flex-1 text-xl font-semibold outline-none bg-transparent placeholder-zinc-300 dark:placeholder-zinc-600 dark:text-zinc-100"
-              />
-              {dirty && <span className="text-xs text-zinc-400 dark:text-zinc-500 shrink-0">Unsaved</span>}
-              <button
-                onClick={save}
-                disabled={!dirty}
-                className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-300 disabled:opacity-40 disabled:cursor-default"
-              >
-                Save
-              </button>
-              <button
-                onClick={toggleTheme}
-                className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-300"
-                title="Toggle dark mode"
-              >
-                {dark ? "☀" : "☾"}
-              </button>
-              <div ref={exportRef} className="relative">
-                <button
-                  onClick={() => setExportOpen((o) => !o)}
-                  className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-300 transition-colors"
-                >
-                  Export ↓
-                </button>
-                {exportOpen && (
-                  <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded shadow-md z-10">
-                    <button
-                      onClick={() => exportNote("pdf")}
-                      className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700 dark:text-zinc-200 transition-colors"
-                    >
-                      Download PDF
-                    </button>
-                    <button
-                      onClick={() => exportNote("docx")}
-                      className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700 dark:text-zinc-200 transition-colors"
-                    >
-                      Download Word
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Toolbar */}
-            <Toolbar
-              editor={editor}
-              activeLevel={activeLevel}
-              activeFontSize={activeFontSize}
-              activeLineSpacing={activeLineSpacing}
-              activeSpacingBefore={activeSpacingBefore}
-              activeSpacingAfter={activeSpacingAfter}
-              maxWidth={maxWidth}
-              onMaxWidthChange={setMaxWidth}
-              tocVisible={tocVisible}
-              onToggleToc={() => setTocVisible((v) => !v)}
-            />
-
-            {/* Table of contents */}
-            {tocVisible && (
-              <TableOfContents headings={headings} onJump={jumpToHeading} />
-            )}
-
-            {/* Editor body */}
-            <div className="flex-1 overflow-y-auto bg-zinc-100 dark:bg-zinc-950 py-8">
-              <EditorContent
-                editor={editor}
-                style={{ maxWidth: `${maxWidth}rem` }}
-                className="mx-auto bg-white dark:bg-zinc-900 prose prose-zinc dark:prose-invert px-16 py-12 min-h-full focus:outline-none"
-              />
-            </div>
-          </>
+      {/* Grid */}
+      <main className="px-10 py-8">
+        {notebooks.length === 0 ? (
+          <div className="flex items-center justify-center h-64 text-zinc-400 dark:text-zinc-500 text-sm">
+            No notebooks yet — create one to get started
+          </div>
         ) : (
-          <div className="flex-1 flex flex-col">
-            <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
-              <button
-                onClick={() => setSidebarVisible((v) => !v)}
-                className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
-                title={sidebarVisible ? "Hide sidebar" : "Show sidebar"}
+          <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
+            {notebooks.map((nb) => (
+              <div
+                key={nb.id}
+                onClick={() => renamingId !== nb.id && router.push(`/notebook/${nb.id}`)}
+                className="group relative flex flex-col cursor-pointer select-none"
+                style={{ minHeight: "220px" }}
               >
-                ☰
-              </button>
-              <button
-                onClick={toggleTheme}
-                className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-300"
-                title="Toggle dark mode"
-              >
-                {dark ? "☀" : "☾"}
-              </button>
-            </div>
-            <div className="flex-1 flex items-center justify-center text-zinc-400 dark:text-zinc-500 text-sm">
-              Select a note or create a new one
-            </div>
+                {/* Notebook spine effect */}
+                <div
+                  className="absolute left-0 top-2 bottom-2 w-3 rounded-l-sm bg-zinc-300 dark:bg-zinc-600 group-hover:bg-zinc-400 dark:group-hover:bg-zinc-500 transition-colors"
+                />
+                {/* Notebook cover */}
+                <div className="flex-1 ml-3 rounded-r-md rounded-tl-sm border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 group-hover:border-zinc-400 dark:group-hover:border-zinc-500 transition-colors shadow-sm flex flex-col p-4">
+                  {/* Lines decoration */}
+                  <div className="flex-1 flex flex-col justify-end gap-1.5 mb-3">
+                    {[...Array(6)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="h-px bg-zinc-100 dark:bg-zinc-700 rounded"
+                      />
+                    ))}
+                  </div>
+                  {/* Notebook name */}
+                  {renamingId === nb.id ? (
+                    <input
+                      ref={renameRef}
+                      value={renameVal}
+                      onChange={(e) => setRenameVal(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") renameNotebook(nb.id);
+                        if (e.key === "Escape") { setRenamingId(null); setRenameVal(""); }
+                        e.stopPropagation();
+                      }}
+                      onBlur={() => renameNotebook(nb.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full text-sm font-semibold bg-transparent border-b border-zinc-400 dark:border-zinc-500 outline-none dark:text-zinc-100 pb-0.5"
+                    />
+                  ) : (
+                    <p className="text-sm font-semibold truncate dark:text-zinc-100 leading-tight">
+                      {nb.name}
+                    </p>
+                  )}
+                  <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-1">
+                    {nb._count.notes} {nb._count.notes === 1 ? "note" : "notes"}
+                  </p>
+                </div>
+
+                {/* Hover actions */}
+                <div className="absolute top-1 right-1 hidden group-hover:flex items-center gap-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRenamingId(nb.id);
+                      setRenameVal(nb.name);
+                    }}
+                    className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                    title="Rename"
+                  >
+                    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M11 2l3 3-9 9H2v-3L11 2z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (confirm(`Delete "${nb.name}"? This will also delete all its notes and diagram.`)) {
+                        deleteNotebook(nb.id);
+                      }
+                    }}
+                    className="text-zinc-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700"
+                    title="Delete"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </main>
