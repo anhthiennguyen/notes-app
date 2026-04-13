@@ -473,6 +473,14 @@ export default function NotebookPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [maxWidth]);
 
+  // Autosave content + title 1.5s after last change
+  useEffect(() => {
+    if (!dirty || !activeNote || !editor) return;
+    const t = setTimeout(() => save(), 1500);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, title, activeNote?.id]);
+
   async function fetchNotes() {
     const res = await fetch(`/api/notes?notebookId=${notebookId}`);
     const data = await res.json();

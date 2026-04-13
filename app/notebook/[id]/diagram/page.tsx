@@ -264,6 +264,8 @@ export default function DiagramPage() {
   const [dragKwId, setDragKwId] = useState<string | null>(null);
   const [dragOverKwId, setDragOverKwId] = useState<string | null>(null);
   const [dragOverCat, setDragOverCat] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<{ word: string; count: number }[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<Bubble, undefined> | null>(null);
@@ -426,6 +428,7 @@ export default function DiagramPage() {
 
   useEffect(() => {
     fetch(`/api/notes?notebookId=${notebookId}`).then((r) => r.json()).then((d) => setNotes(Array.isArray(d) ? d : []));
+    fetch(`/api/notebooks/${notebookId}/keyword-suggestions`).then((r) => r.json()).then((d) => setSuggestions(Array.isArray(d) ? d : []));
   }, []);
 
   useEffect(() => {
@@ -706,6 +709,37 @@ export default function DiagramPage() {
         {/* Custom keywords panel */}
         <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
           <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">Keywords</p>
+
+          {/* Suggestions */}
+          {suggestions.length > 0 && (
+            <div>
+              <button
+                onClick={() => setShowSuggestions((v) => !v)}
+                className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors mb-1"
+              >
+                {showSuggestions ? "▾" : "▸"} Suggested
+              </button>
+              {showSuggestions && (
+                <div className="flex flex-wrap gap-1">
+                  {suggestions
+                    .filter((s) => !customKeywords.some((k) => k.text.toLowerCase() === s.word.toLowerCase()))
+                    .map((s) => (
+                      <button
+                        key={s.word}
+                        onClick={() => {
+                          setCustomKeywords((prev) => [...prev, { id: crypto.randomUUID(), text: s.word, color: newKwColor }]);
+                          setKwDirty(true);
+                        }}
+                        className="text-xs border border-zinc-200 dark:border-zinc-600 rounded px-1.5 py-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-300 transition-colors"
+                        title={`${s.count} occurrence${s.count !== 1 ? "s" : ""}`}
+                      >
+                        + {s.word}
+                      </button>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Manual input */}
           <div className="flex gap-1">
