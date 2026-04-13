@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
+@custom-variant dark (&:is(.dark *));
 
 .tiptap.ProseMirror { outline: none; min-height: 100%; }
 .tiptap.ProseMirror p.is-editor-empty:first-child::before {

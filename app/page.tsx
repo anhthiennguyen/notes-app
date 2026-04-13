@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import Link from "next/link";
+import { useTheme } from "@/lib/theme";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -85,30 +87,21 @@ function Toolbar({
     }
   }
 
+  const sel = "border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 text-sm bg-white dark:bg-zinc-800 dark:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer outline-none";
+  const btn = "px-3 py-1 rounded border border-zinc-300 dark:border-zinc-600 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-200";
+
   return (
-    <div className="flex items-center gap-3 px-8 py-2 border-b border-zinc-100 bg-zinc-50 text-sm">
-      <select
-        value={activeLevel}
-        onChange={(e) => setFormat(Number(e.target.value))}
-        className="border border-zinc-300 rounded px-2 py-1 text-sm bg-white hover:bg-zinc-50 cursor-pointer outline-none"
-      >
+    <div className="flex items-center gap-3 px-8 py-2 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-sm">
+      <select value={activeLevel} onChange={(e) => setFormat(Number(e.target.value))} className={sel}>
         {HEADING_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
+          <option key={o.value} value={o.value}>{o.label}</option>
         ))}
       </select>
 
-      <select
-        value={activeFontSize}
-        onChange={(e) => handleFontSize(e.target.value)}
-        className="border border-zinc-300 rounded px-2 py-1 text-sm bg-white hover:bg-zinc-50 cursor-pointer outline-none w-20"
-      >
+      <select value={activeFontSize} onChange={(e) => handleFontSize(e.target.value)} className={`${sel} w-20`}>
         <option value="">Size</option>
         {[10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64].map((s) => (
-          <option key={s} value={`${s}px`}>
-            {s}
-          </option>
+          <option key={s} value={`${s}px`}>{s}</option>
         ))}
       </select>
 
@@ -121,7 +114,7 @@ function Toolbar({
           if (val) cmd.setLineSpacing(val).run();
           else cmd.unsetLineSpacing().run();
         }}
-        className="border border-zinc-300 rounded px-2 py-1 text-sm bg-white hover:bg-zinc-50 cursor-pointer outline-none w-24"
+        className={`${sel} w-24`}
       >
         <option value="">Spacing</option>
         {[["1", "Single"], ["1.15", "1.15"], ["1.5", "1.5×"], ["2", "Double"], ["2.5", "2.5×"], ["3", "Triple"]].map(([val, label]) => (
@@ -134,32 +127,32 @@ function Toolbar({
           onClick={() => setParaSpacingOpen((o) => !o)}
           className={`px-3 py-1 rounded border text-sm transition-colors ${
             paraSpacingOpen
-              ? "bg-zinc-900 text-white border-zinc-900"
-              : "border-zinc-300 hover:bg-zinc-100"
+              ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100"
+              : "border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200"
           }`}
           title="Paragraph spacing"
         >
           ¶
         </button>
         {paraSpacingOpen && (
-          <div className="absolute left-0 mt-1 bg-white border border-zinc-200 rounded shadow-md z-20 p-3 flex flex-col gap-2 w-48">
-            <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wide">Paragraph spacing</p>
-            <label className="text-xs text-zinc-500">Space before</label>
+          <div className="absolute left-0 mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded shadow-md z-20 p-3 flex flex-col gap-2 w-48">
+            <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">Paragraph spacing</p>
+            <label className="text-xs text-zinc-500 dark:text-zinc-400">Space before</label>
             <select
               value={activeSpacingBefore}
               onChange={(e) => (editor.chain().focus() as any).setParaSpacing(e.target.value, activeSpacingAfter).run()}
-              className="border border-zinc-300 rounded px-2 py-1 text-sm bg-white outline-none"
+              className={sel}
             >
               <option value="">None</option>
               {["4pt","8pt","12pt","16pt","24pt","32pt","48pt"].map(v => (
                 <option key={v} value={v}>{v}</option>
               ))}
             </select>
-            <label className="text-xs text-zinc-500">Space after</label>
+            <label className="text-xs text-zinc-500 dark:text-zinc-400">Space after</label>
             <select
               value={activeSpacingAfter}
               onChange={(e) => (editor.chain().focus() as any).setParaSpacing(activeSpacingBefore, e.target.value).run()}
-              className="border border-zinc-300 rounded px-2 py-1 text-sm bg-white outline-none"
+              className={sel}
             >
               <option value="">None</option>
               {["4pt","8pt","12pt","16pt","24pt","32pt","48pt"].map(v => (
@@ -170,10 +163,7 @@ function Toolbar({
         )}
       </div>
 
-      <button
-        onClick={() => editor.chain().focus().selectAll().run()}
-        className="px-3 py-1 rounded border border-zinc-300 text-sm hover:bg-zinc-100 transition-colors"
-      >
+      <button onClick={() => editor.chain().focus().selectAll().run()} className={btn}>
         Select all
       </button>
 
@@ -227,15 +217,14 @@ function Toolbar({
 
           view.dispatch(tr);
         }}
-        className="px-3 py-1 rounded border border-zinc-300 text-sm hover:bg-zinc-100 transition-colors"
+        className={btn}
         title="Auto-space headings and paragraphs"
       >
         Clean up
       </button>
 
-
       <div className="flex items-center gap-1">
-        <label className="text-xs text-zinc-500 whitespace-nowrap">Width</label>
+        <label className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap">Width</label>
         <input
           type="number"
           min={20}
@@ -243,7 +232,7 @@ function Toolbar({
           step={5}
           value={maxWidth}
           onChange={(e) => onMaxWidthChange(Number(e.target.value))}
-          className="border border-zinc-300 rounded px-2 py-1 text-sm w-16 outline-none"
+          className="border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 text-sm w-16 outline-none bg-white dark:bg-zinc-800 dark:text-zinc-100"
           title="Max content width (rem)"
         />
       </div>
@@ -252,8 +241,8 @@ function Toolbar({
         onClick={onToggleToc}
         className={`px-3 py-1 rounded border text-sm transition-colors ${
           tocVisible
-            ? "bg-zinc-900 text-white border-zinc-900"
-            : "border-zinc-300 hover:bg-zinc-100"
+            ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100"
+            : "border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200"
         }`}
       >
         Contents
@@ -273,7 +262,7 @@ function TableOfContents({
 }) {
   if (headings.length === 0) {
     return (
-      <div className="px-8 py-3 text-zinc-400 text-sm border-b border-zinc-100 bg-zinc-50 italic">
+      <div className="px-8 py-3 text-zinc-400 dark:text-zinc-500 text-sm border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 italic">
         No headings yet — add Heading 1/2/3 to populate the table of contents.
       </div>
     );
@@ -282,8 +271,8 @@ function TableOfContents({
   const minLevel = Math.min(...headings.map((h) => h.level));
 
   return (
-    <div className="px-8 py-3 border-b border-zinc-200 bg-zinc-50">
-      <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide mb-2">
+    <div className="px-8 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900">
+      <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">
         Table of Contents
       </p>
       <ul className="space-y-0.5">
@@ -294,7 +283,7 @@ function TableOfContents({
           >
             <button
               onClick={() => onJump(h.pos)}
-              className="text-sm text-zinc-700 hover:text-zinc-900 hover:underline text-left truncate max-w-full"
+              className="text-sm text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:underline text-left truncate max-w-full"
             >
               {h.text}
             </button>
@@ -308,7 +297,9 @@ function TableOfContents({
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function Home() {
+  const { dark, toggle: toggleTheme } = useTheme();
   const [notes, setNotes] = useState<NoteMeta[]>([]);
+  const [pendingScroll, setPendingScroll] = useState<string | null>(null);
   const [activeNote, setActiveNote] = useState<Note | null>(null);
   const [title, setTitle] = useState("");
   const [importing, setImporting] = useState(false);
@@ -322,7 +313,7 @@ export default function Home() {
   const [activeSpacingBefore, setActiveSpacingBefore] = useState("");
   const [activeSpacingAfter, setActiveSpacingAfter] = useState("");
   const [maxWidth, setMaxWidth] = useState(56);
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [dirty, setDirty] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -352,8 +343,7 @@ export default function Home() {
     content: "",
     onUpdate({ editor }) {
       if (!activeNote) return;
-      const content = editor.getHTML();
-      scheduleSave({ content });
+      setDirty(true);
       extractHeadings(editor);
       syncToolbarState(editor);
     },
@@ -379,6 +369,43 @@ export default function Home() {
     fetchNotes();
   }, []);
 
+  // Auto-open note from URL param (navigated from diagram page)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const noteId = params.get("note");
+    const scroll = params.get("scroll");
+    if (noteId) {
+      openNote(parseInt(noteId, 10));
+      if (scroll) setPendingScroll(decodeURIComponent(scroll));
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Scroll to heading once editor + note are loaded
+  useEffect(() => {
+    if (!pendingScroll || !editor || !activeNote) return;
+    const target = pendingScroll;
+    setPendingScroll(null);
+    setTimeout(() => {
+      let found = -1;
+      editor.state.doc.forEach((node, pos) => {
+        if (found !== -1) return;
+        if (
+          (node.type.name === "heading" || node.type.name === "paragraph") &&
+          node.textContent.toLowerCase().includes(target.toLowerCase())
+        ) {
+          found = pos;
+        }
+      });
+      if (found !== -1) {
+        editor.chain().focus().setTextSelection(found + 1).run();
+        const dom = editor.view.nodeDOM(found);
+        if (dom instanceof Element) dom.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 300);
+  }, [pendingScroll, editor, activeNote]);
+
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
@@ -388,6 +415,18 @@ export default function Home() {
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        save();
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, activeNote, title, editor]);
 
   async function fetchNotes() {
     const res = await fetch("/api/notes");
@@ -402,6 +441,7 @@ export default function Home() {
     const note: Note = await res.json();
     setActiveNote(note);
     setTitle(note.title);
+    setDirty(false);
     editor?.commands.setContent(note.content);
     if (editor) extractHeadings(editor);
   }
@@ -414,19 +454,15 @@ export default function Home() {
     openNote(note.id);
   }
 
-  function scheduleSave(data: Partial<Note>) {
-    if (!activeNote) return;
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => save(data), 600);
-  }
-
-  async function save(data: Partial<Note>) {
-    if (!activeNote) return;
+  async function save() {
+    if (!activeNote || !editor) return;
+    const data = { title, content: editor.getHTML() };
     await fetch(`/api/notes/${activeNote.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
+    setDirty(false);
     setNotes((prev) =>
       prev.map((n) =>
         n.id === activeNote.id
@@ -438,7 +474,7 @@ export default function Home() {
 
   function handleTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
     setTitle(e.target.value);
-    scheduleSave({ title: e.target.value });
+    setDirty(true);
   }
 
   async function deleteNote(id: number) {
@@ -506,20 +542,27 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen bg-white text-zinc-900 font-sans">
+    <div className="flex h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-sans">
       {/* Sidebar */}
-      <aside className={`flex flex-col border-r border-zinc-200 bg-zinc-50 transition-all duration-200 overflow-hidden ${sidebarVisible ? "w-64" : "w-0"}`}>
-        <div className="p-3 flex gap-2 border-b border-zinc-200">
+      <aside className={`flex flex-col border-r border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 transition-all duration-200 overflow-hidden ${sidebarVisible ? "w-64" : "w-0"}`}>
+        <div className="p-3 flex gap-2 border-b border-zinc-200 dark:border-zinc-700">
+          <Link
+            href="/diagram"
+            className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors text-center dark:text-zinc-300"
+            title="Open diagram view"
+          >
+            ⬡
+          </Link>
           <button
             onClick={newNote}
-            className="flex-1 text-sm bg-zinc-900 text-white rounded px-3 py-1.5 hover:bg-zinc-700 transition-colors"
+            className="flex-1 text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded px-3 py-1.5 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
           >
             New note
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={importing}
-            className="text-sm border border-zinc-300 rounded px-3 py-1.5 hover:bg-zinc-100 transition-colors disabled:opacity-50"
+            className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-300 transition-colors disabled:opacity-50"
             title="Import PDF or Word doc"
           >
             {importing ? "…" : "Import"}
@@ -537,11 +580,11 @@ export default function Home() {
             <li
               key={note.id}
               onClick={() => openNote(note.id)}
-              className={`group flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-zinc-100 ${
-                activeNote?.id === note.id ? "bg-zinc-200" : ""
+              className={`group flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 ${
+                activeNote?.id === note.id ? "bg-zinc-200 dark:bg-zinc-700" : ""
               }`}
             >
-              <span className="text-sm truncate flex-1">
+              <span className="text-sm truncate flex-1 dark:text-zinc-200">
                 {note.title || "Untitled"}
               </span>
               <button
@@ -563,10 +606,10 @@ export default function Home() {
         {activeNote ? (
           <>
             {/* Title + export */}
-            <div className="border-b border-zinc-200 px-4 py-3 flex items-center gap-3">
+            <div className="border-b border-zinc-200 dark:border-zinc-700 px-4 py-3 flex items-center gap-3">
               <button
                 onClick={() => setSidebarVisible((v) => !v)}
-                className="text-zinc-400 hover:text-zinc-700 transition-colors shrink-0"
+                className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors shrink-0"
                 title={sidebarVisible ? "Hide sidebar" : "Show sidebar"}
               >
                 ☰
@@ -574,27 +617,43 @@ export default function Home() {
               <input
                 value={title}
                 onChange={handleTitleChange}
+                onKeyDown={(e) => e.key === "Enter" && save()}
                 placeholder="Note title"
-                className="flex-1 text-xl font-semibold outline-none bg-transparent placeholder-zinc-300"
+                className="flex-1 text-xl font-semibold outline-none bg-transparent placeholder-zinc-300 dark:placeholder-zinc-600 dark:text-zinc-100"
               />
-<div ref={exportRef} className="relative">
+              {dirty && <span className="text-xs text-zinc-400 dark:text-zinc-500 shrink-0">Unsaved</span>}
+              <button
+                onClick={save}
+                disabled={!dirty}
+                className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-300 disabled:opacity-40 disabled:cursor-default"
+              >
+                Save
+              </button>
+              <button
+                onClick={toggleTheme}
+                className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-300"
+                title="Toggle dark mode"
+              >
+                {dark ? "☀" : "☾"}
+              </button>
+              <div ref={exportRef} className="relative">
                 <button
                   onClick={() => setExportOpen((o) => !o)}
-                  className="text-sm border border-zinc-300 rounded px-3 py-1.5 hover:bg-zinc-100 transition-colors"
+                  className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-300 transition-colors"
                 >
                   Export ↓
                 </button>
                 {exportOpen && (
-                  <div className="absolute right-0 mt-1 w-36 bg-white border border-zinc-200 rounded shadow-md z-10">
+                  <div className="absolute right-0 mt-1 w-36 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded shadow-md z-10">
                     <button
                       onClick={() => exportNote("pdf")}
-                      className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-50 transition-colors"
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700 dark:text-zinc-200 transition-colors"
                     >
                       Download PDF
                     </button>
                     <button
                       onClick={() => exportNote("docx")}
-                      className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-50 transition-colors"
+                      className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700 dark:text-zinc-200 transition-colors"
                     >
                       Download Word
                     </button>
@@ -623,26 +682,33 @@ export default function Home() {
             )}
 
             {/* Editor body */}
-            <div className="flex-1 overflow-y-auto bg-white py-8">
+            <div className="flex-1 overflow-y-auto bg-zinc-100 dark:bg-zinc-950 py-8">
               <EditorContent
                 editor={editor}
                 style={{ maxWidth: `${maxWidth}rem` }}
-                className="mx-auto bg-white prose prose-zinc px-16 py-12 min-h-full focus:outline-none"
+                className="mx-auto bg-white dark:bg-zinc-900 prose prose-zinc dark:prose-invert px-16 py-12 min-h-full focus:outline-none"
               />
             </div>
           </>
         ) : (
           <div className="flex-1 flex flex-col">
-            <div className="px-4 py-3 border-b border-zinc-200 flex items-center">
+            <div className="px-4 py-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between">
               <button
                 onClick={() => setSidebarVisible((v) => !v)}
-                className="text-zinc-400 hover:text-zinc-700 transition-colors"
+                className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
                 title={sidebarVisible ? "Hide sidebar" : "Show sidebar"}
               >
                 ☰
               </button>
+              <button
+                onClick={toggleTheme}
+                className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-300"
+                title="Toggle dark mode"
+              >
+                {dark ? "☀" : "☾"}
+              </button>
             </div>
-            <div className="flex-1 flex items-center justify-center text-zinc-400 text-sm">
+            <div className="flex-1 flex items-center justify-center text-zinc-400 dark:text-zinc-500 text-sm">
               Select a note or create a new one
             </div>
           </div>
