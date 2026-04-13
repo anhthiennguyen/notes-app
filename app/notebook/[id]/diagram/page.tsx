@@ -156,46 +156,86 @@ function attachEnclosureDrags(
   customKeywordsRef: React.MutableRefObject<CustomKeyword[]>,
   simRef: React.MutableRefObject<d3.Simulation<Bubble, undefined> | null>,
   clusterOverridesRef: React.MutableRefObject<Record<string, { x: number; y: number }>>,
-  saveCallbackRef: React.MutableRefObject<() => void>
+  saveCallbackRef: React.MutableRefObject<() => void>,
+  selectedKwIdsRef: React.MutableRefObject<Set<string>>,
+  setSelectedKwIds: (fn: (prev: Set<string>) => Set<string>) => void
 ) {
   canvas.selectAll<SVGPathElement, unknown>("path.kw-enc").each(function() {
     const el = d3.select<SVGPathElement, unknown>(this);
     const kwId = el.attr("data-id");
+    let didDrag = false;
 
     const drag = d3.drag<SVGPathElement, unknown>()
       .on("start", function(event) {
         event.sourceEvent.stopPropagation();
-        const kw = customKeywordsRef.current.find((k) => k.id === kwId);
-        if (!kw) return;
-        bubblesRef.current
-          .filter((b) => b.label.toLowerCase().includes(kw.text.toLowerCase()))
-          .forEach((b) => { b.fx = b.x; b.fy = b.y; });
+        didDrag = false;
+
+        // Determine which keywords to move: if dragged kw is selected, move all selected; else just this one
+        const isSelected = selectedKwIdsRef.current.has(kwId);
+        const kwIds = isSelected ? [...selectedKwIdsRef.current] : [kwId];
+
+        kwIds.forEach((id) => {
+          const kw = customKeywordsRef.current.find((k) => k.id === id);
+          if (!kw) return;
+          bubblesRef.current
+            .filter((b) => b.label.toLowerCase().includes(kw.text.toLowerCase()))
+            .forEach((b) => { b.fx = b.x; b.fy = b.y; });
+        });
         simRef.current?.alphaTarget(0.1).restart();
         d3.select(this).attr("cursor", "grabbing");
       })
       .on("drag", function(event) {
-        const kw = customKeywordsRef.current.find((k) => k.id === kwId);
-        if (!kw) return;
-        bubblesRef.current
-          .filter((b) => b.label.toLowerCase().includes(kw.text.toLowerCase()))
-          .forEach((b) => {
-            if (b.fx != null) b.fx += event.dx;
-            if (b.fy != null) b.fy += event.dy;
-          });
+        didDrag = true;
+        const isSelected = selectedKwIdsRef.current.has(kwId);
+        const kwIds = isSelected ? [...selectedKwIdsRef.current] : [kwId];
+
+        kwIds.forEach((id) => {
+          const kw = customKeywordsRef.current.find((k) => k.id === id);
+          if (!kw) return;
+          bubblesRef.current
+            .filter((b) => b.label.toLowerCase().includes(kw.text.toLowerCase()))
+            .forEach((b) => {
+              if (b.fx != null) b.fx += event.dx;
+              if (b.fy != null) b.fy += event.dy;
+            });
+        });
       })
-      .on("end", function() {
-        const kw = customKeywordsRef.current.find((k) => k.id === kwId);
-        if (!kw) return;
-        const matching = bubblesRef.current.filter((b) =>
-          b.label.toLowerCase().includes(kw.text.toLowerCase())
-        );
-        // Save new center as cluster target so force holds them here
-        if (matching.length > 0 && clusterOverridesRef?.current) {
-          const cx = matching.reduce((s, b) => s + (b.fx ?? b.x ?? 0), 0) / matching.length;
-          const cy = matching.reduce((s, b) => s + (b.fy ?? b.y ?? 0), 0) / matching.length;
-          clusterOverridesRef.current[kwId] = { x: cx, y: cy };
+      .on("end", function(event) {
+        if (!didDrag) {
+          // It was a click — handle selection toggle
+          const shift = event.sourceEvent?.shiftKey;
+          setSelectedKwIds((prev) => {
+            const next = new Set(prev);
+            if (shift) {
+              if (next.has(kwId)) next.delete(kwId);
+              else next.add(kwId);
+            } else {
+              if (next.has(kwId) && next.size === 1) next.clear();
+              else { next.clear(); next.add(kwId); }
+            }
+            return next;
+          });
+          d3.select(this).attr("cursor", "grab");
+          return;
         }
-        matching.forEach((b) => { b.fx = null; b.fy = null; });
+
+        const isSelected = selectedKwIdsRef.current.has(kwId);
+        const kwIds = isSelected ? [...selectedKwIdsRef.current] : [kwId];
+
+        kwIds.forEach((id) => {
+          const kw = customKeywordsRef.current.find((k) => k.id === id);
+          if (!kw) return;
+          const matching = bubblesRef.current.filter((b) =>
+            b.label.toLowerCase().includes(kw.text.toLowerCase())
+          );
+          if (matching.length > 0 && clusterOverridesRef?.current) {
+            const cx = matching.reduce((s, b) => s + (b.fx ?? b.x ?? 0), 0) / matching.length;
+            const cy = matching.reduce((s, b) => s + (b.fy ?? b.y ?? 0), 0) / matching.length;
+            clusterOverridesRef.current[id] = { x: cx, y: cy };
+          }
+          matching.forEach((b) => { b.fx = null; b.fy = null; });
+        });
+
         simRef.current?.alphaTarget(0);
         d3.select(this).attr("cursor", "grab");
         saveCallbackRef.current();
@@ -266,6 +306,12 @@ export default function DiagramPage() {
   const [dragOverCat, setDragOverCat] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<{ word: string; count: number }[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [selectedKwIds, setSelectedKwIds] = useState<Set<string>>(new Set());
+  const selectedKwIdsRef = useRef<Set<string>>(new Set());
+  const [tool, setTool] = useState<"hand" | "select">("hand");
+  const toolRef = useRef<"hand" | "select">("hand");
+  const [selRect, setSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const selStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<Bubble, undefined> | null>(null);
@@ -370,6 +416,28 @@ export default function DiagramPage() {
   useEffect(() => { bubblesRef.current = bubbles; }, [bubbles]);
   useEffect(() => { definitionsRef.current = definitions; }, [definitions]);
 
+  // Keep tool ref in sync + update bg cursor
+  useEffect(() => {
+    toolRef.current = tool;
+    const svg = svgRef.current;
+    if (svg) d3.select(svg).select("rect.bg").attr("cursor", tool === "select" ? "crosshair" : "grab");
+  }, [tool]);
+
+  // Keep selection ref in sync + update visual styles
+  useEffect(() => {
+    selectedKwIdsRef.current = selectedKwIds;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.selectAll<SVGPathElement, unknown>("path.kw-enc").each(function() {
+      const id = d3.select(this).attr("data-id");
+      const selected = selectedKwIds.has(id);
+      d3.select(this)
+        .attr("stroke-width", selected ? 3.5 : 2.5)
+        .attr("stroke-dasharray", selected ? "6 3" : null)
+        .attr("stroke-opacity", selected ? 1 : 0.75);
+    });
+  }, [selectedKwIds]);
+
   // Keep keyword ref in sync — rebuild enclosure layer, kick simulation
   useEffect(() => {
     customKeywordsRef.current = customKeywords;
@@ -388,7 +456,7 @@ export default function DiagramPage() {
     const canvas = canvasRef.current;
     if (canvas) {
       buildEnclosureLayer(canvas, customKeywords);
-      attachEnclosureDrags(canvas, bubblesRef, customKeywordsRef, simRef, clusterOverridesRef, saveCallbackRef);
+      attachEnclosureDrags(canvas, bubblesRef, customKeywordsRef, simRef, clusterOverridesRef, saveCallbackRef, selectedKwIdsRef, setSelectedKwIds);
       applyVisibility(canvas);
       // Color-coordinate matching bubbles to their keyword color
       customKeywords.forEach((kw) => {
@@ -519,23 +587,72 @@ export default function DiagramPage() {
     const canvas = svg.select<SVGGElement>("g.canvas");
     canvas.attr("transform", `translate(${panRef.current.x},${panRef.current.y}) scale(${zoomRef.current})`);
 
-    // Pan drag on background rect
-    const panDrag = d3.drag<SVGRectElement, unknown>()
-      .on("start", () => svg.select("rect.bg").attr("cursor", "grabbing"))
-      .on("drag", (event) => {
-        panRef.current.x += event.dx;
-        panRef.current.y += event.dy;
-        canvas.attr("transform", `translate(${panRef.current.x},${panRef.current.y}) scale(${zoomRef.current})`);
+    // Pan / select drag on background rect
+    let bgDidDrag = false;
+    const bgDrag = d3.drag<SVGRectElement, unknown>()
+      .on("start", (event) => {
+        bgDidDrag = false;
+        if (toolRef.current === "select") {
+          selStartRef.current = { x: event.x, y: event.y };
+          svg.select("rect.bg").attr("cursor", "crosshair");
+        } else {
+          svg.select("rect.bg").attr("cursor", "grabbing");
+        }
       })
-      .on("end", () => svg.select("rect.bg").attr("cursor", "grab"));
-    svg.select<SVGRectElement>("rect.bg").call(panDrag);
+      .on("drag", (event) => {
+        bgDidDrag = true;
+        if (toolRef.current === "select") {
+          const x0 = selStartRef.current!.x;
+          const y0 = selStartRef.current!.y;
+          setSelRect({
+            x: Math.min(x0, event.x), y: Math.min(y0, event.y),
+            w: Math.abs(event.x - x0), h: Math.abs(event.y - y0),
+          });
+        } else {
+          panRef.current.x += event.dx;
+          panRef.current.y += event.dy;
+          canvas.attr("transform", `translate(${panRef.current.x},${panRef.current.y}) scale(${zoomRef.current})`);
+        }
+      })
+      .on("end", (event) => {
+        if (toolRef.current === "select") {
+          setSelRect(null);
+          if (bgDidDrag && selStartRef.current) {
+            // Convert selection rect from SVG coords → canvas coords
+            const px = panRef.current.x, py = panRef.current.y, z = zoomRef.current;
+            const x0 = selStartRef.current.x, y0 = selStartRef.current.y;
+            const x1 = event.x, y1 = event.y;
+            const minX = (Math.min(x0, x1) - px) / z, maxX = (Math.max(x0, x1) - px) / z;
+            const minY = (Math.min(y0, y1) - py) / z, maxY = (Math.max(y0, y1) - py) / z;
+            const next = new Set<string>();
+            customKeywordsRef.current.forEach((kw) => {
+              const matching = bubblesRef.current.filter((b) =>
+                b.label.toLowerCase().includes(kw.text.toLowerCase())
+              );
+              if (matching.length === 0) return;
+              const cx = matching.reduce((s, b) => s + (b.x ?? 0), 0) / matching.length;
+              const cy = matching.reduce((s, b) => s + (b.y ?? 0), 0) / matching.length;
+              if (cx >= minX && cx <= maxX && cy >= minY && cy <= maxY) next.add(kw.id);
+            });
+            setSelectedKwIds(next);
+          } else {
+            setSelectedKwIds(new Set());
+          }
+          selStartRef.current = null;
+          svg.select("rect.bg").attr("cursor", "crosshair");
+        } else {
+          if (!bgDidDrag) setSelectedKwIds(new Set());
+          svg.select("rect.bg").attr("cursor", "grab");
+        }
+      });
+    svg.select<SVGRectElement>("rect.bg").call(bgDrag);
 
     // Store canvas ref so the keyword effect can access it
     canvasRef.current = canvas;
 
     // Rebuild enclosure paths (keywords may already be loaded from DB)
     buildEnclosureLayer(canvas, customKeywordsRef.current);
-    attachEnclosureDrags(canvas, bubblesRef, customKeywordsRef, simRef, clusterOverridesRef, saveCallbackRef);
+    attachEnclosureDrags(canvas, bubblesRef, customKeywordsRef, simRef, clusterOverridesRef, saveCallbackRef, selectedKwIdsRef, setSelectedKwIds);
 
     // Clear bubble elements
     canvas.selectAll("g.bubble").remove();
@@ -999,6 +1116,42 @@ export default function DiagramPage() {
             <p className="text-sm">Select a note to generate its bubble diagram</p>
             <p className="text-xs">Nodes sharing keywords cluster together — drag to rearrange, right-click to open in Notes</p>
           </div>
+        )}
+
+        {/* Tool switcher */}
+        <div className="absolute top-3 left-3 flex items-center gap-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-1 shadow-sm">
+          <button
+            onClick={() => setTool("hand")}
+            title="Hand tool (pan)"
+            className={`p-1.5 rounded transition-colors ${tool === "hand" ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900" : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"}`}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 1v7M5.5 3.5V7M3 5.5V9a5 5 0 0 0 10 0V7M10.5 3.5V7M13 6v2" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setTool("select")}
+            title="Selection tool"
+            className={`p-1.5 rounded transition-colors ${tool === "select" ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900" : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"}`}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="2" width="12" height="12" rx="1" strokeDasharray="3 2" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Marquee selection rect */}
+        {selRect && (
+          <svg className="absolute inset-0 w-full h-full pointer-events-none">
+            <rect
+              x={selRect.x} y={selRect.y}
+              width={selRect.w} height={selRect.h}
+              fill="rgba(59,130,246,0.08)"
+              stroke="#3b82f6"
+              strokeWidth={1.5}
+              strokeDasharray="5 3"
+            />
+          </svg>
         )}
         {/* Zoom slider */}
         <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm">
