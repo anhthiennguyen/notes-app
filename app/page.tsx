@@ -18,6 +18,7 @@ export default function Home() {
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameVal, setRenameVal] = useState("");
+  const [exportingId, setExportingId] = useState<number | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const coverTargetId = useRef<number | null>(null);
@@ -29,6 +30,7 @@ export default function Home() {
   useEffect(() => {
     if (renamingId !== null) renameRef.current?.focus();
   }, [renamingId]);
+
 
   async function fetchNotebooks() {
     const res = await fetch("/api/notebooks");
@@ -73,6 +75,31 @@ export default function Home() {
       fetchNotebooks();
     };
     reader.readAsDataURL(file);
+  }
+
+  async function exportNotebook(id: number, name: string, format: "pdf" | "docx") {
+    setExportingId(id);
+    try {
+      const res = await fetch(`/api/notebooks/${id}/export?format=${format}`);
+      if (!res.ok) {
+        const msg = await res.text().catch(() => res.statusText);
+        alert("Export failed: " + msg);
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${name.replace(/[/\\?%*:|"<>]/g, "-") || "notebook"}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Export error: " + err);
+    } finally {
+      setExportingId(null);
+    }
   }
 
   async function removeCover(id: number) {
@@ -139,6 +166,16 @@ export default function Home() {
                 {/* Notebook spine */}
                 <div className="absolute left-0 top-2 bottom-2 w-3 rounded-l-sm bg-zinc-300 dark:bg-zinc-600 group-hover:bg-zinc-400 dark:group-hover:bg-zinc-500 transition-colors" />
 
+                {/* Export loading overlay */}
+                {exportingId === nb.id && (
+                  <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-2 bg-white/80 dark:bg-zinc-900/80 rounded-r-md rounded-tl-sm ml-3">
+                    <svg className="animate-spin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                      <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                    </svg>
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">Exporting…</span>
+                  </div>
+                )}
+
                 {/* Notebook cover */}
                 <div className="flex-1 ml-3 rounded-r-md rounded-tl-sm border border-zinc-200 dark:border-zinc-700 group-hover:border-zinc-400 dark:group-hover:border-zinc-500 transition-colors shadow-sm overflow-hidden flex flex-col">
                   {/* Cover image or lines */}
@@ -189,7 +226,7 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* Name + count */}
+                  {/* Name + count + export */}
                   <div className="px-3 py-2 bg-white dark:bg-zinc-800 border-t border-zinc-100 dark:border-zinc-700">
                     {renamingId === nb.id ? (
                       <input
@@ -210,9 +247,30 @@ export default function Home() {
                         {nb.name}
                       </p>
                     )}
-                    <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5">
-                      {nb._count.notes} {nb._count.notes === 1 ? "note" : "notes"}
-                    </p>
+                    <div className="flex items-center justify-between mt-0.5">
+                      <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                        {nb._count.notes} {nb._count.notes === 1 ? "note" : "notes"}
+                      </p>
+                      <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => exportNotebook(nb.id, nb.name, "pdf")}
+                          disabled={exportingId === nb.id}
+                          className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors disabled:opacity-40"
+                          title="Export all as PDF"
+                        >
+                          PDF
+                        </button>
+                        <span className="text-zinc-300 dark:text-zinc-600 text-xs">·</span>
+                        <button
+                          onClick={() => exportNotebook(nb.id, nb.name, "docx")}
+                          disabled={exportingId === nb.id}
+                          className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors disabled:opacity-40"
+                          title="Export all as Word"
+                        >
+                          DOCX
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
