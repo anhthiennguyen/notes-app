@@ -176,25 +176,36 @@ function Toolbar({
           const { from, to } = state.selection;
           if (from === to) return;
 
-          const selectedText = state.doc.textBetween(from, to, " ");
-          const sentences = selectedText
-            .split(/(?<=[.!?])\s+/)
-            .map((s) => s.trim())
-            .filter((s) => s.length > 0);
-          if (sentences.length === 0) return;
+          // Collect the paragraphs that are fully or partially within the selection
+          const paras: { pos: number; size: number; text: string }[] = [];
+          state.doc.nodesBetween(from, to, (node, pos) => {
+            if (node.type.name === "paragraph") {
+              const text = node.textContent.trim();
+              if (text) paras.push({ pos, size: node.nodeSize, text });
+            }
+          });
+          if (paras.length === 0) return;
 
           const schema = state.schema;
-          const { bulletList, listItem, paragraph } = schema.nodes;
+          const { bulletList, listItem, paragraph: paraNode } = schema.nodes;
           if (!bulletList || !listItem) return;
 
+          // Build sentences: add period if missing
+          const sentences = paras.map(({ text }) =>
+            /[.!?,;:]$/.test(text) ? text : text + "."
+          );
+
+          const replaceFrom = paras[0].pos;
+          const replaceTo = paras[paras.length - 1].pos + paras[paras.length - 1].size;
+
           const items = sentences.map((sentence) =>
-            listItem.create({}, paragraph.create({}, schema.text(sentence)))
+            listItem.create({}, paraNode.create({}, schema.text(sentence)))
           );
           const list = bulletList.create({}, items);
-          editor.view.dispatch(state.tr.replaceWith(from, to, list));
+          editor.view.dispatch(state.tr.replaceWith(replaceFrom, replaceTo, list));
         }}
         className={btn}
-        title="Convert selected sentences to bullet points"
+        title="Add periods then convert to bullet points"
       >
         Bulletize
       </button>
