@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
     const result = await mammoth.convertToHtml(
       { buffer },
       {
-        transformDocument: mammoth.transforms.paragraph((p: any) => {
+        transformDocument: (mammoth as any).transforms.paragraph((p: any) => {
           const style = paraStyles[paraIndex++];
           // Skip list items — mammoth renders them as <li>, our regex won't match
           // and the sentinel would appear as visible text.
