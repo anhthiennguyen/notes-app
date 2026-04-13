@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import PDFDocument from "pdfkit";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
+import { parseHtmlForExport, type Block, type Run } from "@/lib/parse-html-for-export";
 
 export async function GET(
   req: NextRequest,
@@ -42,42 +43,67 @@ export async function GET(
   );
 }
 
-type Block = { tag: string; text: string };
+// ── PDF ──────────────────────────────────────────────────────────────────────
 
-/** Parse HTML into a flat list of {tag, text} blocks */
-function parseHtml(html: string): Block[] {
-  const blocks: Block[] = [];
-  const tagRe = /<(\/?)(\w+)[^>]*>([\s\S]*?)(?=<\w|<\/\w|$)/g;
-  // Simple block-level parse: split on block tags
-  const blockRe = /<(h[1-6]|p|li|br)[^>]*>([\s\S]*?)<\/\1>|<br\s*\/?>/gi;
-  let match;
-  while ((match = blockRe.exec(html)) !== null) {
-    const tag = (match[1] || "br").toLowerCase();
-    const inner = (match[2] || "").replace(/<[^>]+>/g, "").trim(); // strip inline tags
-    if (tag === "br") {
-      blocks.push({ tag: "p", text: "" });
-    } else if (inner) {
-      blocks.push({ tag, text: inner });
-    }
-  }
-  // Fallback: if nothing parsed, treat as plain text
-  if (blocks.length === 0) {
-    const plain = html.replace(/<[^>]+>/g, "").trim();
-    if (plain) blocks.push({ tag: "p", text: plain });
-  }
-  return blocks;
-}
-
-const PDF_HEADING_STYLES: Record<string, { fontSize: number; font: string }> = {
-  h1: { fontSize: 22, font: "Helvetica-Bold" },
-  h2: { fontSize: 18, font: "Helvetica-Bold" },
-  h3: { fontSize: 15, font: "Helvetica-Bold" },
-  h4: { fontSize: 13, font: "Helvetica-Bold" },
-  h5: { fontSize: 12, font: "Helvetica-Bold" },
-  h6: { fontSize: 11, font: "Helvetica-Bold" },
+const PDF_HEADING: Record<string, { fontSize: number; baseFont: string }> = {
+  h1: { fontSize: 22, baseFont: "Helvetica-Bold" },
+  h2: { fontSize: 18, baseFont: "Helvetica-Bold" },
+  h3: { fontSize: 15, baseFont: "Helvetica-Bold" },
+  h4: { fontSize: 13, baseFont: "Helvetica-Bold" },
+  h5: { fontSize: 12, baseFont: "Helvetica-Bold" },
+  h6: { fontSize: 11, baseFont: "Helvetica-Bold" },
 };
 
-const DOCX_HEADING_LEVELS: Record<string, typeof HeadingLevel[keyof typeof HeadingLevel]> = {
+function pdfFont(run: Run, isHeading: boolean): string {
+  const b = isHeading || run.bold;
+  if (b && run.italic) return "Helvetica-BoldOblique";
+  if (b) return "Helvetica-Bold";
+  if (run.italic) return "Helvetica-Oblique";
+  return "Helvetica";
+}
+
+function writeRuns(doc: InstanceType<typeof PDFDocument>, runs: Run[], fontSize: number, isHeading: boolean) {
+  runs.forEach((run, i) => {
+    const continued = i < runs.length - 1;
+    doc
+      .font(pdfFont(run, isHeading))
+      .fontSize(fontSize)
+      .text(run.text, { continued, lineGap: 2, paragraphGap: continued ? 0 : 4 });
+  });
+}
+
+export async function buildPdf(title: string, content: string): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 72 });
+    const chunks: Buffer[] = [];
+    doc.on("data", (c: Buffer) => chunks.push(c));
+    doc.on("end", () => resolve(Buffer.concat(chunks)));
+    doc.on("error", reject);
+
+    doc.fontSize(24).font("Helvetica-Bold").text(title, { paragraphGap: 8 });
+    doc.moveDown(0.5);
+
+    for (const block of parseHtmlForExport(content)) {
+      const heading = PDF_HEADING[block.tag];
+      const isEmpty = block.runs.every((r) => !r.text.trim());
+      if (heading) {
+        doc.moveDown(0.4);
+        writeRuns(doc, block.runs, heading.fontSize, true);
+      } else if (isEmpty) {
+        doc.moveDown(0.6);
+      } else {
+        doc.moveDown(0.1);
+        writeRuns(doc, block.runs, 12, false);
+      }
+    }
+
+    doc.end();
+  });
+}
+
+// ── DOCX ─────────────────────────────────────────────────────────────────────
+
+const DOCX_HEADING: Record<string, typeof HeadingLevel[keyof typeof HeadingLevel]> = {
   h1: HeadingLevel.HEADING_1,
   h2: HeadingLevel.HEADING_2,
   h3: HeadingLevel.HEADING_3,
@@ -86,64 +112,34 @@ const DOCX_HEADING_LEVELS: Record<string, typeof HeadingLevel[keyof typeof Headi
   h6: HeadingLevel.HEADING_6,
 };
 
-async function buildPdf(title: string, content: string): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ margin: 72 });
-    const chunks: Buffer[] = [];
-    doc.on("data", (chunk: Buffer) => chunks.push(chunk));
-    doc.on("end", () => resolve(Buffer.concat(chunks)));
-    doc.on("error", reject);
+function blockToDocxParagraph(block: Block): Paragraph {
+  const headingLevel = DOCX_HEADING[block.tag];
+  const isEmpty = block.runs.every((r) => !r.text.trim());
 
-    // Title
-    doc.fontSize(24).font("Helvetica-Bold").text(title, { paragraphGap: 8 });
-    doc.moveDown(0.5);
-
-    const blocks = parseHtml(content);
-    for (const block of blocks) {
-      const style = PDF_HEADING_STYLES[block.tag];
-      if (style) {
-        doc.moveDown(0.4);
-        doc.fontSize(style.fontSize).font(style.font).text(block.text, { paragraphGap: 4 });
-      } else {
-        doc.fontSize(12).font("Helvetica").text(block.text || " ", { lineGap: 4, paragraphGap: 4 });
-      }
-    }
-
-    doc.end();
-  });
-}
-
-async function buildDocx(title: string, content: string): Promise<Buffer> {
-  const blocks = parseHtml(content);
-
-  const children: Paragraph[] = [
-    new Paragraph({
-      text: title,
-      heading: HeadingLevel.HEADING_1,
-      spacing: { after: 240 },
-    }),
-  ];
-
-  for (const block of blocks) {
-    const headingLevel = DOCX_HEADING_LEVELS[block.tag];
-    if (headingLevel) {
-      children.push(
-        new Paragraph({
-          text: block.text,
-          heading: headingLevel,
-          spacing: { after: 160 },
-        })
-      );
-    } else {
-      children.push(
-        new Paragraph({
-          children: [new TextRun({ text: block.text, size: 24 })],
-          spacing: { after: 120 },
-        })
-      );
-    }
+  if (isEmpty) {
+    return new Paragraph({ children: [new TextRun({ text: "" })], spacing: { after: 120 } });
   }
 
-  const doc = new Document({ sections: [{ children }] });
-  return Packer.toBuffer(doc);
+  const children = block.runs.map(
+    (r) =>
+      new TextRun({
+        text: r.text,
+        bold: r.bold || !!headingLevel,
+        italics: r.italic,
+        size: headingLevel ? undefined : 24,
+      })
+  );
+
+  if (headingLevel) {
+    return new Paragraph({ heading: headingLevel, children, spacing: { after: 160 } });
+  }
+  return new Paragraph({ children, spacing: { after: 120 } });
+}
+
+export async function buildDocx(title: string, content: string): Promise<Buffer> {
+  const children: Paragraph[] = [
+    new Paragraph({ text: title, heading: HeadingLevel.HEADING_1, spacing: { after: 240 } }),
+    ...parseHtmlForExport(content).map(blockToDocxParagraph),
+  ];
+  return Packer.toBuffer(new Document({ sections: [{ children }] }));
 }

@@ -45,6 +45,7 @@ export default function PptxViewer({ onClose }: Props) {
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {slides.length > 0 && <CopySlideTextButton slide={slides[activeSlide]} />}
           <button
             onClick={() => inputRef.current?.click()}
             className="text-xs border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-300"
@@ -94,12 +95,9 @@ export default function PptxViewer({ onClose }: Props) {
           <div className="flex-1 overflow-auto flex items-start justify-center p-4">
             <div className="w-full">
               <SlideCanvas slide={slides[activeSlide]} aspectRatio={aspectRatio} />
-              <div className="flex items-center justify-center gap-3 mt-2">
-                <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                  Slide {activeSlide + 1} of {slides.length}
-                </p>
-                <CopySlideTextButton slide={slides[activeSlide]} />
-              </div>
+              <p className="text-center text-xs text-zinc-400 dark:text-zinc-500 mt-2">
+                Slide {activeSlide + 1} of {slides.length}
+              </p>
             </div>
           </div>
         </div>
