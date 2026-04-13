@@ -318,7 +318,6 @@ export default function NotebookPage() {
   const [pendingNoteId, setPendingNoteId] = useState<number | null>(null);
   const [activeNote, setActiveNote] = useState<Note | null>(null);
   const [title, setTitle] = useState("");
-  const [importing, setImporting] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [tocVisible, setTocVisible] = useState(false);
   const [headings, setHeadings] = useState<HeadingEntry[]>([]);
@@ -336,7 +335,6 @@ export default function NotebookPage() {
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const [fileViewerPos, setFileViewerPos] = useState(40);
   const fileViewerDraggingRef = useRef(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
 
   const extractHeadings = useCallback(
@@ -561,22 +559,6 @@ export default function NotebookPage() {
     }
   }
 
-  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setImporting(true);
-    const form = new FormData();
-    form.append("file", file);
-    const res = await fetch(`/api/import?notebookId=${notebookId}`, { method: "POST", body: form });
-    if (res.ok) {
-      const note: Note = await res.json();
-      await fetchNotes();
-      openNote(note.id);
-    }
-    setImporting(false);
-    e.target.value = "";
-  }
-
   function exportNote(format: "pdf" | "docx") {
     if (!activeNote) return;
     setExportOpen(false);
@@ -641,21 +623,6 @@ export default function NotebookPage() {
           >
             New note
           </button>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={importing}
-            className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-300 transition-colors disabled:opacity-50"
-            title="Import PDF or Word doc"
-          >
-            {importing ? "…" : "Import"}
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".pdf,.docx"
-            className="hidden"
-            onChange={handleImport}
-          />
         </div>
         <ul className="flex-1 overflow-y-auto">
           {notes.map((note) => (
