@@ -5,13 +5,12 @@
 .tiptap.ProseMirror { outline: none; min-height: 100%; }
 
 @keyframes scroll-highlight {
-  0%   { background-color: transparent; }
-  5%   { background-color: #fef08a; }
-  90%  { background-color: #fef08a; }
+  0%   { background-color: #fef08a; }
+  70%  { background-color: #fef08a; }
   100% { background-color: transparent; }
 }
 .scroll-highlight {
-  animation: scroll-highlight 60s ease-out forwards;
+  animation: scroll-highlight 3s ease-out forwards;
   border-radius: 3px;
 }
 .tiptap.ProseMirror p.is-editor-empty:first-child::before {

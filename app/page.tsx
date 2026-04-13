@@ -407,12 +407,14 @@ export default function Home() {
         }
       });
       if (found !== -1) {
+        const node = editor.state.doc.nodeAt(found);
+        const from = found + 1;
+        const to = found + 1 + (node?.content.size ?? 0);
         const dom = editor.view.nodeDOM(found);
         if (dom instanceof Element) {
           dom.scrollIntoView({ behavior: "smooth", block: "center" });
-          dom.classList.add("scroll-highlight");
-          setTimeout(() => dom.classList.remove("scroll-highlight"), 60000);
         }
+        editor.chain().focus().setTextSelection({ from, to }).run();
       }
     }, 300);
   }, [pendingScroll, editor, activeNote]);
