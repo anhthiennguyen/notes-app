@@ -87,6 +87,24 @@ export async function POST(req: NextRequest) {
       {
         transformDocument: (mammoth as any).transforms.paragraph((p: any) => {
           const style = paraStyles[paraIndex++];
+
+          // Preserve empty paragraphs — mammoth drops them otherwise.
+          const hasText = (p.children ?? []).some(
+            (c: any) => c.type === "run" && c.children?.some((t: any) => t.type === "text" && t.value)
+          );
+          if (!hasText && p.numbering == null) {
+            return {
+              ...p,
+              children: [{
+                type: "run", children: [{ type: "text", value: "\u00a0" }],
+                styleId: null, styleName: null, isBold: false, isUnderline: false,
+                isItalic: false, isStrikethrough: false, isAllCaps: false,
+                isSmallCaps: false, verticalAlignment: "baseline",
+                font: null, fontSize: null, highlight: null,
+              }],
+            };
+          }
+
           // Skip list items — mammoth renders them as <li>, our regex won't match
           // and the sentinel would appear as visible text.
           if (!style || p.numbering != null) return p;
