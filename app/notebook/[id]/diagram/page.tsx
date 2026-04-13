@@ -312,6 +312,9 @@ export default function DiagramPage() {
   const toolRef = useRef<"hand" | "select">("hand");
   const [selRect, setSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const selStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitPos, setSplitPos] = useState(50); // percent
+  const splitDraggingRef = useRef(false);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<Bubble, undefined> | null>(null);
@@ -763,7 +766,41 @@ export default function DiagramPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-sans">
+    <div className="flex h-screen overflow-hidden">
+      {/* Notes iframe panel */}
+      {splitOpen && (
+        <>
+          <div style={{ width: `${splitPos}%` }} className="h-full shrink-0 overflow-hidden">
+            <iframe
+              src={`/notebook/${notebookId}`}
+              className="w-full h-full border-0"
+              title="Notes"
+            />
+          </div>
+          {/* Draggable divider */}
+          <div
+            className="w-1 bg-zinc-300 dark:bg-zinc-600 hover:bg-blue-400 dark:hover:bg-blue-500 cursor-col-resize shrink-0 transition-colors"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              splitDraggingRef.current = true;
+              const onMove = (ev: MouseEvent) => {
+                if (!splitDraggingRef.current) return;
+                const pct = (ev.clientX / window.innerWidth) * 100;
+                setSplitPos(Math.max(20, Math.min(80, pct)));
+              };
+              const onUp = () => {
+                splitDraggingRef.current = false;
+                window.removeEventListener("mousemove", onMove);
+                window.removeEventListener("mouseup", onUp);
+              };
+              window.addEventListener("mousemove", onMove);
+              window.addEventListener("mouseup", onUp);
+            }}
+          />
+        </>
+      )}
+      {/* Diagram panel */}
+      <div className="flex flex-1 h-full min-w-0 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-sans">
       {/* Sidebar */}
       <aside className="w-56 flex flex-col border-r border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 shrink-0">
         <div className="p-3 border-b border-zinc-200 dark:border-zinc-700 flex flex-col gap-2">
@@ -772,6 +809,13 @@ export default function DiagramPage() {
             <div className="flex items-center gap-2">
               <button onClick={toggleTheme} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors" title="Toggle dark mode">
                 {dark ? "☀" : "☾"}
+              </button>
+              <button
+                onClick={() => setSplitOpen((v) => !v)}
+                title={splitOpen ? "Close split view" : "Open split view with Notes"}
+                className={`text-xs transition-colors ${splitOpen ? "text-zinc-700 dark:text-zinc-200" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`}
+              >
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="8" y1="2" x2="8" y2="14"/><rect x="1" y="2" width="14" height="12" rx="2"/></svg>
               </button>
               <Link href={`/notebook/${notebookId}`} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">← Notes</Link>
             </div>
@@ -1281,6 +1325,7 @@ export default function DiagramPage() {
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }
