@@ -13,7 +13,7 @@ export async function GET() {
 
 export async function PUT(req: Request) {
   try {
-    const keywords: { id: string; text: string; color: string; x?: number | null; y?: number | null }[] = await req.json();
+    const keywords: { id: string; text: string; color: string; x?: number | null; y?: number | null; category?: string | null }[] = await req.json();
     await prisma.diagramKeyword.deleteMany();
     for (const kw of keywords) {
       await prisma.diagramKeyword.create({ data: kw });

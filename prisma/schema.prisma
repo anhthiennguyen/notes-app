@@ -17,11 +17,12 @@ model Note {
 }
 
 model DiagramKeyword {
-  id    String  @id @default(uuid())
-  text  String
-  color String
-  x     Float?
-  y     Float?
+  id       String  @id @default(uuid())
+  text     String
+  color    String
+  x        Float?
+  y        Float?
+  category String?
 }
 
 model TermDefinition {

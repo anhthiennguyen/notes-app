@@ -104,6 +104,7 @@ interface CustomKeyword {
   hidden?: boolean;
   x?: number | null;
   y?: number | null;
+  category?: string | null;
 }
 
 interface ContextMenu {
@@ -254,6 +255,14 @@ export default function DiagramPage() {
   const [definitions, setDefinitions] = useState<Record<string, string>>({});
   const [defKwId, setDefKwId] = useState<string | null>(null);
   const [defInput, setDefInput] = useState("");
+  const [extraCats, setExtraCats] = useState<string[]>([]);
+  const [showNewCat, setShowNewCat] = useState(false);
+  const [newCatInput, setNewCatInput] = useState("");
+  const [editingCat, setEditingCat] = useState<string | null>(null);
+  const [editingCatVal, setEditingCatVal] = useState("");
+  const [dragKwId, setDragKwId] = useState<string | null>(null);
+  const [dragOverKwId, setDragOverKwId] = useState<string | null>(null);
+  const [dragOverCat, setDragOverCat] = useState<string | null>(null);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<Bubble, undefined> | null>(null);
@@ -732,20 +741,69 @@ export default function DiagramPage() {
             </button>
           </div>
 
-          {/* Active keywords */}
-          {customKeywords.length > 0 && (
-            <ul className="flex flex-col gap-1">
-              {customKeywords.map((kw) => (
-                <li
-                  key={kw.id}
-                  className="flex flex-col gap-0.5"
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    setDefKwId((prev) => prev === kw.id ? null : kw.id);
-                    setDefInput(definitions[kw.text] ?? "");
+          {/* New category button */}
+          <div className="mb-1">
+            {showNewCat ? (
+              <div className="flex gap-1">
+                <input
+                  value={newCatInput}
+                  onChange={(e) => setNewCatInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter") {
+                      const name = newCatInput.trim();
+                      if (name && !extraCats.includes(name)) setExtraCats((prev) => [...prev, name]);
+                      setNewCatInput(""); setShowNewCat(false);
+                    } else if (e.key === "Escape") { setShowNewCat(false); setNewCatInput(""); }
                   }}
-                >
+                  autoFocus
+                  placeholder="Category name…"
+                  className="flex-1 text-xs rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:text-zinc-200 px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-black"
+                />
+                <button onClick={() => { const name = newCatInput.trim(); if (name && !extraCats.includes(name)) setExtraCats((prev) => [...prev, name]); setNewCatInput(""); setShowNewCat(false); }} className="text-xs bg-black hover:bg-zinc-800 text-white rounded px-2 py-0.5">Add</button>
+              </div>
+            ) : (
+              <button onClick={() => setShowNewCat(true)} className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">+ New category</button>
+            )}
+          </div>
+
+          {/* Active keywords grouped by category */}
+          {(() => {
+            const kwCats = customKeywords.map((k) => k.category ?? "").filter(Boolean);
+            const allCats = Array.from(new Set([...extraCats, ...kwCats])).sort((a, b) => a.localeCompare(b));
+
+            const renderKw = (kw: CustomKeyword) => (
+              <li
+                key={kw.id}
+                className={`flex flex-col gap-0.5 rounded transition-colors ${dragOverKwId === kw.id ? "border-t-2 border-black dark:border-white" : ""}`}
+                draggable
+                onDragStart={(e) => { e.stopPropagation(); setDragKwId(kw.id); }}
+                onDragEnd={() => { setDragKwId(null); setDragOverKwId(null); setDragOverCat(null); }}
+                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverKwId(kw.id); setDragOverCat(null); }}
+                onDrop={(e) => {
+                  e.stopPropagation();
+                  if (!dragKwId || dragKwId === kw.id) return;
+                  setCustomKeywords((prev) => {
+                    const dragged = prev.find((k) => k.id === dragKwId);
+                    if (!dragged) return prev;
+                    const without = prev.filter((k) => k.id !== dragKwId);
+                    const idx = without.findIndex((k) => k.id === kw.id);
+                    const updated = { ...dragged, category: kw.category ?? null };
+                    without.splice(idx, 0, updated);
+                    return without;
+                  });
+                  setKwDirty(true);
+                  setDragOverKwId(null);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setDefKwId((prev) => prev === kw.id ? null : kw.id);
+                  setDefInput(definitions[kw.text] ?? "");
+                }}
+              >
                 <div className="flex items-center gap-1 text-xs">
+                  {/* Drag handle */}
+                  <span className="cursor-grab text-zinc-300 dark:text-zinc-600 select-none shrink-0" title="Drag to reorder">⠿</span>
                   <label className="relative w-3 h-3 shrink-0 cursor-pointer">
                     <span className="block w-3 h-3 rounded-full border-2" style={{ borderColor: kw.color, backgroundColor: kw.color + "33" }} />
                     <input
@@ -753,9 +811,7 @@ export default function DiagramPage() {
                       value={kw.color}
                       onChange={(e) => {
                         const color = e.target.value;
-                        setCustomKeywords((prev) =>
-                          prev.map((k) => k.id === kw.id ? { ...k, color } : k)
-                        );
+                        setCustomKeywords((prev) => prev.map((k) => k.id === kw.id ? { ...k, color } : k));
                         setKwDirty(true);
                       }}
                       className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
@@ -763,70 +819,38 @@ export default function DiagramPage() {
                     />
                   </label>
                   <span className={`flex-1 truncate ${kw.hidden ? "text-zinc-400 dark:text-zinc-500 line-through" : "dark:text-zinc-300"}`}>{kw.text}</span>
-                  {/* Hide/show */}
                   <button
-                    onClick={() => {
-                      setCustomKeywords((prev) => prev.map((k) => k.id === kw.id ? { ...k, hidden: !k.hidden } : k));
-                      setKwDirty(true);
-                    }}
+                    onClick={() => { setCustomKeywords((prev) => prev.map((k) => k.id === kw.id ? { ...k, hidden: !k.hidden } : k)); setKwDirty(true); }}
                     className={`transition-colors ${kw.hidden ? "text-zinc-300 dark:text-zinc-600" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`}
                     title={kw.hidden ? "Show" : "Hide"}
                   >
                     {kw.hidden ? (
-                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M2 2l12 12M6.5 6.6A2 2 0 0 0 9.4 9.5" />
-                        <path d="M8 4C4.5 4 2 8 2 8s.8 1.4 2.3 2.7M10.6 10.6C9.6 11.4 8.8 12 8 12c-3.5 0-6-4-6-4" />
-                        <path d="M14 8s-.7 1.2-2 2.4" />
-                      </svg>
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 2l12 12M6.5 6.6A2 2 0 0 0 9.4 9.5" /><path d="M8 4C4.5 4 2 8 2 8s.8 1.4 2.3 2.7M10.6 10.6C9.6 11.4 8.8 12 8 12c-3.5 0-6-4-6-4" /><path d="M14 8s-.7 1.2-2 2.4" /></svg>
                     ) : (
-                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" />
-                        <circle cx="8" cy="8" r="2" />
-                      </svg>
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" /><circle cx="8" cy="8" r="2" /></svg>
                     )}
                   </button>
-                  {/* Isolate */}
                   <button
                     onClick={() => setIsolatedKwId((prev) => prev === kw.id ? null : kw.id)}
                     className={`transition-colors ${isolatedKwId === kw.id ? "text-amber-500" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`}
                     title={isolatedKwId === kw.id ? "Exit isolate" : "Isolate"}
                   >
-                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="8" cy="8" r="3" />
-                      <line x1="8" y1="1" x2="8" y2="4" />
-                      <line x1="8" y1="12" x2="8" y2="15" />
-                      <line x1="1" y1="8" x2="4" y2="8" />
-                      <line x1="12" y1="8" x2="15" y2="8" />
-                    </svg>
+                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="3" /><line x1="8" y1="1" x2="8" y2="4" /><line x1="8" y1="12" x2="8" y2="15" /><line x1="1" y1="8" x2="4" y2="8" /><line x1="12" y1="8" x2="15" y2="8" /></svg>
                   </button>
                   <button
-                    onClick={() => {
-                      setCustomKeywords((prev) =>
-                        prev.map((k) => k.id === kw.id ? { ...k, color: randomColor() } : k)
-                      );
-                      setKwDirty(true);
-                    }}
+                    onClick={() => { setCustomKeywords((prev) => prev.map((k) => k.id === kw.id ? { ...k, color: randomColor() } : k)); setKwDirty(true); }}
                     className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
                     title="Random color"
                   >
-                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M2 4h2l8 8h2M12 4h2M2 12h2" />
-                      <polyline points="10 4 12 4 12 6" />
-                      <polyline points="4 12 2 12 2 10" />
-                    </svg>
+                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4h2l8 8h2M12 4h2M2 12h2" /><polyline points="10 4 12 4 12 6" /><polyline points="4 12 2 12 2 10" /></svg>
                   </button>
                   <button
-                    onClick={() => {
-                      setCustomKeywords((prev) => prev.filter((k) => k.id !== kw.id));
-                      setKwDirty(true);
-                    }}
+                    onClick={() => { setCustomKeywords((prev) => prev.filter((k) => k.id !== kw.id)); setKwDirty(true); }}
                     className="text-zinc-400 hover:text-red-500 transition-colors"
-                  >
-                    ✕
-                  </button>
+                  >✕</button>
                 </div>
                 {defKwId === kw.id && (
-                  <div className="pl-4">
+                  <div className="pl-5">
                     <textarea
                       value={defInput}
                       onChange={(e) => setDefInput(e.target.value)}
@@ -837,34 +861,97 @@ export default function DiagramPage() {
                       className="w-full text-xs rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:text-zinc-200 px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-black"
                     />
                     <div className="flex gap-1 mt-1">
-                      <button
-                        onClick={() => {
-                          const definition = defInput.trim();
-                          fetch("/api/term-definitions", {
-                            method: "PUT",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ term: kw.text, definition }),
-                          });
-                          setDefinitions((prev) => ({ ...prev, [kw.text]: definition }));
-                          setDefKwId(null);
-                        }}
-                        className="text-xs bg-black hover:bg-zinc-800 text-white rounded px-2 py-0.5 transition-colors"
-                      >
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setDefKwId(null)}
-                        className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
-                      >
-                        Cancel
-                      </button>
+                      <button onClick={() => { const definition = defInput.trim(); fetch("/api/term-definitions", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ term: kw.text, definition }) }); setDefinitions((prev) => ({ ...prev, [kw.text]: definition })); setDefKwId(null); }} className="text-xs bg-black hover:bg-zinc-800 text-white rounded px-2 py-0.5 transition-colors">Save</button>
+                      <button onClick={() => setDefKwId(null)} className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors">Cancel</button>
                     </div>
                   </div>
                 )}
-                </li>
-              ))}
-            </ul>
-          )}
+              </li>
+            );
+
+            return (
+              <div className="flex flex-col gap-2">
+                {allCats.map((cat) => {
+                  const kws = customKeywords.filter((k) => k.category === cat);
+                  return (
+                    <div key={cat}>
+                      {/* Category header */}
+                      <div
+                        className={`flex items-center gap-1 mb-0.5 rounded px-1 py-0.5 transition-colors ${dragOverCat === cat ? "bg-zinc-100 dark:bg-zinc-700" : ""}`}
+                        onDragOver={(e) => { e.preventDefault(); setDragOverCat(cat); setDragOverKwId(null); }}
+                        onDragLeave={() => setDragOverCat(null)}
+                        onDrop={(e) => {
+                          e.stopPropagation();
+                          if (!dragKwId) return;
+                          setCustomKeywords((prev) => prev.map((k) => k.id === dragKwId ? { ...k, category: cat } : k));
+                          setKwDirty(true);
+                          setDragOverCat(null);
+                        }}
+                      >
+                        {editingCat === cat ? (
+                          <>
+                            <input
+                              value={editingCatVal}
+                              onChange={(e) => setEditingCatVal(e.target.value)}
+                              onKeyDown={(e) => {
+                                e.stopPropagation();
+                                if (e.key === "Enter") {
+                                  const next = editingCatVal.trim();
+                                  if (next && next !== cat) {
+                                    setCustomKeywords((prev) => prev.map((k) => k.category === cat ? { ...k, category: next } : k));
+                                    setExtraCats((prev) => prev.map((c) => c === cat ? next : c));
+                                    setKwDirty(true);
+                                  }
+                                  setEditingCat(null);
+                                } else if (e.key === "Escape") { setEditingCat(null); }
+                              }}
+                              autoFocus
+                              className="flex-1 text-xs font-semibold rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:text-zinc-200 px-1 py-0 focus:outline-none focus:ring-1 focus:ring-black"
+                            />
+                            <button onClick={() => { const next = editingCatVal.trim(); if (next && next !== cat) { setCustomKeywords((prev) => prev.map((k) => k.category === cat ? { ...k, category: next } : k)); setExtraCats((prev) => prev.map((c) => c === cat ? next : c)); setKwDirty(true); } setEditingCat(null); }} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200">✓</button>
+                          </>
+                        ) : (
+                          <span
+                            className="flex-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide cursor-pointer hover:text-zinc-700 dark:hover:text-zinc-200"
+                            onClick={() => { setEditingCat(cat); setEditingCatVal(cat); }}
+                            title="Click to rename"
+                          >{cat}</span>
+                        )}
+                        <button
+                          onClick={() => { setExtraCats((prev) => prev.filter((c) => c !== cat)); setCustomKeywords((prev) => prev.map((k) => k.category === cat ? { ...k, category: null } : k)); setKwDirty(true); }}
+                          className="text-zinc-300 hover:text-red-400 dark:text-zinc-600 dark:hover:text-red-400 text-xs transition-colors"
+                          title="Remove category"
+                        >✕</button>
+                      </div>
+                      <ul className="flex flex-col gap-0.5 pl-1">
+                        {kws.map(renderKw)}
+                      </ul>
+                    </div>
+                  );
+                })}
+
+                {/* Uncategorized */}
+                {customKeywords.filter((k) => !k.category).length > 0 && (
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDragOverCat("__none__"); setDragOverKwId(null); }}
+                    onDragLeave={() => setDragOverCat(null)}
+                    onDrop={(e) => {
+                      e.stopPropagation();
+                      if (!dragKwId) return;
+                      setCustomKeywords((prev) => prev.map((k) => k.id === dragKwId ? { ...k, category: null } : k));
+                      setKwDirty(true);
+                      setDragOverCat(null);
+                    }}
+                  >
+                    {allCats.length > 0 && <p className={`text-xs font-semibold uppercase tracking-wide mb-0.5 px-1 py-0.5 rounded transition-colors ${dragOverCat === "__none__" ? "bg-zinc-100 dark:bg-zinc-700 text-zinc-500" : "text-zinc-400 dark:text-zinc-500"}`}>Uncategorized</p>}
+                    <ul className="flex flex-col gap-0.5 pl-1">
+                      {customKeywords.filter((k) => !k.category).map(renderKw)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       </aside>
 
