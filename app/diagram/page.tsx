@@ -102,6 +102,8 @@ interface CustomKeyword {
   id: string;
   text: string;
   color: string;
+  x?: number | null;
+  y?: number | null;
 }
 
 interface ContextMenu {
@@ -141,7 +143,8 @@ function attachEnclosureDrags(
   bubblesRef: React.MutableRefObject<Bubble[]>,
   customKeywordsRef: React.MutableRefObject<CustomKeyword[]>,
   simRef: React.MutableRefObject<d3.Simulation<Bubble, undefined> | null>,
-  clusterOverridesRef: React.MutableRefObject<Record<string, { x: number; y: number }>>
+  clusterOverridesRef: React.MutableRefObject<Record<string, { x: number; y: number }>>,
+  saveCallbackRef: React.MutableRefObject<() => void>
 ) {
   canvas.selectAll<SVGPathElement, unknown>("path.kw-enc").each(function() {
     const el = d3.select<SVGPathElement, unknown>(this);
@@ -183,6 +186,7 @@ function attachEnclosureDrags(
         matching.forEach((b) => { b.fx = null; b.fy = null; });
         simRef.current?.alphaTarget(0);
         d3.select(this).attr("cursor", "grab");
+        saveCallbackRef.current();
       });
 
     el.call(drag);
@@ -242,6 +246,7 @@ export default function DiagramPage() {
   const customKeywordsRef = useRef(customKeywords);
   const bubblesRef = useRef(bubbles);
   const clusterOverridesRef = useRef<Record<string, { x: number; y: number }>>({});
+  const saveCallbackRef = useRef<() => void>(() => {});
   const updateEnclosuresRef = useRef<(() => void)>(() => {
     const c = canvasRef.current;
     if (!c) return;
@@ -270,7 +275,16 @@ export default function DiagramPage() {
   useEffect(() => {
     fetch("/api/diagram-keywords")
       .then((r) => r.json())
-      .then((d) => Array.isArray(d) && setCustomKeywords(d));
+      .then((d: CustomKeyword[]) => {
+        if (!Array.isArray(d)) return;
+        setCustomKeywords(d);
+        // Restore saved border positions
+        const overrides: Record<string, { x: number; y: number }> = {};
+        d.forEach((kw) => {
+          if (kw.x != null && kw.y != null) overrides[kw.id] = { x: kw.x, y: kw.y };
+        });
+        clusterOverridesRef.current = overrides;
+      });
   }, []);
 
   // Keep bubbles ref in sync
@@ -279,10 +293,31 @@ export default function DiagramPage() {
   // Keep keyword ref in sync — rebuild enclosure layer, kick simulation
   useEffect(() => {
     customKeywordsRef.current = customKeywords;
+    // Keep save callback up to date with latest keywords
+    saveCallbackRef.current = () => {
+      const withPositions = customKeywordsRef.current.map((kw) => {
+        const override = clusterOverridesRef.current[kw.id];
+        return { ...kw, x: override?.x ?? kw.x ?? null, y: override?.y ?? kw.y ?? null };
+      });
+      fetch("/api/diagram-keywords", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(withPositions),
+      }).then((r) => r.ok && setKwDirty(false));
+    };
     const canvas = canvasRef.current;
     if (canvas) {
       buildEnclosureLayer(canvas, customKeywords);
-      attachEnclosureDrags(canvas, bubblesRef, customKeywordsRef, simRef, clusterOverridesRef);
+      attachEnclosureDrags(canvas, bubblesRef, customKeywordsRef, simRef, clusterOverridesRef, saveCallbackRef);
+      // Color-coordinate matching bubbles to their keyword color
+      customKeywords.forEach((kw) => {
+        bubblesRef.current
+          .filter((b) => b.label.toLowerCase().includes(kw.text.toLowerCase()))
+          .forEach((b) => { b.color = kw.color; });
+      });
+      canvas.selectAll<SVGGElement, Bubble>("g.bubble")
+        .select("circle:first-child")
+        .attr("fill", (d) => d.color);
     }
     if (simRef.current) {
       simRef.current.alphaTarget(0.3).restart();
@@ -320,16 +355,21 @@ export default function DiagramPage() {
     setActiveNote(note);
     const items = parseNoteHtml(note.content);
     const clusters = buildKeywordClusters(items);
-    const newBubbles = items.map((item, i) => ({
-      id: item.id,
-      label: item.label,
-      nodeType: item.nodeType,
-      cluster: clusters[i],
-      radius: RADIUS[item.nodeType] ?? 36,
-      color: PALETTE[clusters[i] % PALETTE.length],
-      x: size.w / 2 + (Math.random() - 0.5) * 200,
-      y: size.h / 2 + (Math.random() - 0.5) * 200,
-    }));
+    const newBubbles = items.map((item, i) => {
+      const kw = customKeywordsRef.current.find((k) =>
+        item.label.toLowerCase().includes(k.text.toLowerCase())
+      );
+      return {
+        id: item.id,
+        label: item.label,
+        nodeType: item.nodeType,
+        cluster: clusters[i],
+        radius: RADIUS[item.nodeType] ?? 36,
+        color: kw ? kw.color : PALETTE[clusters[i] % PALETTE.length],
+        x: size.w / 2 + (Math.random() - 0.5) * 200,
+        y: size.h / 2 + (Math.random() - 0.5) * 200,
+      };
+    });
     setBubbles(newBubbles);
 
     // Compute top keywords by frequency across all labels
@@ -358,18 +398,8 @@ export default function DiagramPage() {
     setNewKwColor(randomColor());
   }
 
-  async function saveKeywords(keywords: CustomKeyword[]) {
-    const res = await fetch("/api/diagram-keywords", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(keywords),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      console.error("Save keywords failed:", data);
-      return;
-    }
-    setKwDirty(false);
+  async function saveKeywords() {
+    saveCallbackRef.current();
   }
 
   // ── Combined render + simulate + drag effect ───────────────────────────────
@@ -416,7 +446,7 @@ export default function DiagramPage() {
 
     // Rebuild enclosure paths (keywords may already be loaded from DB)
     buildEnclosureLayer(canvas, customKeywordsRef.current);
-    attachEnclosureDrags(canvas, bubblesRef, customKeywordsRef, simRef);
+    attachEnclosureDrags(canvas, bubblesRef, customKeywordsRef, simRef, clusterOverridesRef, saveCallbackRef);
 
     // Clear bubble elements
     canvas.selectAll("g.bubble").remove();
@@ -534,7 +564,7 @@ export default function DiagramPage() {
           <div className="flex items-center gap-2 min-w-0">
             {kwDirty && <span className="text-xs text-zinc-400 dark:text-zinc-500 shrink-0">Unsaved</span>}
             <button
-              onClick={() => saveKeywords(customKeywords)}
+              onClick={() => saveKeywords()}
               disabled={!kwDirty}
               className="text-xs border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-200 disabled:opacity-40 disabled:cursor-default shrink-0"
             >

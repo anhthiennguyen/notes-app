@@ -16,7 +16,9 @@ model Note {
 }
 
 model DiagramKeyword {
-  id    String @id @default(uuid())
+  id    String  @id @default(uuid())
   text  String
   color String
+  x     Float?
+  y     Float?
 }
