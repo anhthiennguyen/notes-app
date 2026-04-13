@@ -102,6 +102,7 @@ interface CustomKeyword {
   id: string;
   text: string;
   color: string;
+  hidden?: boolean;
   x?: number | null;
   y?: number | null;
 }
@@ -233,6 +234,10 @@ export default function DiagramPage() {
   const [bubbles, setBubbles] = useState<Bubble[]>([]);
   const [customKeywords, setCustomKeywords] = useState<CustomKeyword[]>([]);
   const [kwDirty, setKwDirty] = useState(false);
+  const [showBorders, setShowBorders] = useState(true);
+  const showBordersRef = useRef(true);
+  const [isolatedKwId, setIsolatedKwId] = useState<string | null>(null);
+  const isolatedKwIdRef = useRef<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [newKw, setNewKw] = useState("");
   const [newKwColor, setNewKwColor] = useState("#f59e0b");
@@ -247,6 +252,34 @@ export default function DiagramPage() {
   const bubblesRef = useRef(bubbles);
   const clusterOverridesRef = useRef<Record<string, { x: number; y: number }>>({});
   const saveCallbackRef = useRef<() => void>(() => {});
+
+  function applyVisibility(canvas: d3.Selection<SVGGElement, unknown, null, undefined>) {
+    const kws = customKeywordsRef.current;
+    const isoId = isolatedKwIdRef.current;
+    const showB = showBordersRef.current;
+
+    // Bubbles
+    canvas.selectAll<SVGGElement, Bubble>("g.bubble").attr("display", (d) => {
+      const label = d.label.toLowerCase();
+      if (isoId) {
+        const kw = kws.find((k) => k.id === isoId);
+        return kw && label.includes(kw.text.toLowerCase()) ? null : "none";
+      }
+      // If any visible keyword matches → show; if only hidden keywords match → hide; if no keyword matches → show
+      const matchingKw = kws.find((k) => label.includes(k.text.toLowerCase()));
+      if (!matchingKw) return null;
+      return matchingKw.hidden ? "none" : null;
+    });
+
+    // Enclosures
+    canvas.selectAll<SVGPathElement, unknown>("path.kw-enc").attr("display", function() {
+      if (!showB) return "none";
+      const kwId = d3.select(this).attr("data-id");
+      if (isoId) return kwId === isoId ? null : "none";
+      const kw = kws.find((k) => k.id === kwId);
+      return kw?.hidden ? "none" : null;
+    });
+  }
   const updateEnclosuresRef = useRef<(() => void)>(() => {
     const c = canvasRef.current;
     if (!c) return;
@@ -309,6 +342,7 @@ export default function DiagramPage() {
     if (canvas) {
       buildEnclosureLayer(canvas, customKeywords);
       attachEnclosureDrags(canvas, bubblesRef, customKeywordsRef, simRef, clusterOverridesRef, saveCallbackRef);
+      applyVisibility(canvas);
       // Color-coordinate matching bubbles to their keyword color
       customKeywords.forEach((kw) => {
         bubblesRef.current
@@ -325,6 +359,18 @@ export default function DiagramPage() {
     }
     updateEnclosuresRef.current();
   }, [customKeywords]);
+
+  useEffect(() => {
+    showBordersRef.current = showBorders;
+    if (canvasRef.current) applyVisibility(canvasRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showBorders]);
+
+  useEffect(() => {
+    isolatedKwIdRef.current = isolatedKwId;
+    if (canvasRef.current) applyVisibility(canvasRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isolatedKwId]);
 
   useEffect(() => {
     fetch("/api/notes").then((r) => r.json()).then((d) => setNotes(Array.isArray(d) ? d : []));
@@ -548,6 +594,7 @@ export default function DiagramPage() {
         updateEnclosuresRef.current?.();
       });
 
+    applyVisibility(canvas);
     simRef.current = sim;
     return () => { sim.stop(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -569,6 +616,15 @@ export default function DiagramPage() {
               className="text-xs border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-200 disabled:opacity-40 disabled:cursor-default shrink-0"
             >
               Save
+            </button>
+            <button
+              onClick={() => setShowBorders((v) => !v)}
+              className={`text-xs transition-colors ${showBorders ? "text-zinc-700 dark:text-zinc-200" : "text-zinc-400 dark:text-zinc-500"}`}
+              title={showBorders ? "Hide borders" : "Show borders"}
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="2" y="2" width="12" height="12" rx="3" />
+              </svg>
             </button>
             {activeNote && (
               <button
@@ -686,7 +742,43 @@ export default function DiagramPage() {
                       title="Change color"
                     />
                   </label>
-                  <span className="flex-1 truncate dark:text-zinc-300">{kw.text}</span>
+                  <span className={`flex-1 truncate ${kw.hidden ? "text-zinc-400 dark:text-zinc-500 line-through" : "dark:text-zinc-300"}`}>{kw.text}</span>
+                  {/* Hide/show */}
+                  <button
+                    onClick={() => {
+                      setCustomKeywords((prev) => prev.map((k) => k.id === kw.id ? { ...k, hidden: !k.hidden } : k));
+                      setKwDirty(true);
+                    }}
+                    className={`transition-colors ${kw.hidden ? "text-zinc-300 dark:text-zinc-600" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`}
+                    title={kw.hidden ? "Show" : "Hide"}
+                  >
+                    {kw.hidden ? (
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M2 2l12 12M6.5 6.6A2 2 0 0 0 9.4 9.5" />
+                        <path d="M8 4C4.5 4 2 8 2 8s.8 1.4 2.3 2.7M10.6 10.6C9.6 11.4 8.8 12 8 12c-3.5 0-6-4-6-4" />
+                        <path d="M14 8s-.7 1.2-2 2.4" />
+                      </svg>
+                    ) : (
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" />
+                        <circle cx="8" cy="8" r="2" />
+                      </svg>
+                    )}
+                  </button>
+                  {/* Isolate */}
+                  <button
+                    onClick={() => setIsolatedKwId((prev) => prev === kw.id ? null : kw.id)}
+                    className={`transition-colors ${isolatedKwId === kw.id ? "text-amber-500" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`}
+                    title={isolatedKwId === kw.id ? "Exit isolate" : "Isolate"}
+                  >
+                    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="8" cy="8" r="3" />
+                      <line x1="8" y1="1" x2="8" y2="4" />
+                      <line x1="8" y1="12" x2="8" y2="15" />
+                      <line x1="1" y1="8" x2="4" y2="8" />
+                      <line x1="12" y1="8" x2="15" y2="8" />
+                    </svg>
+                  </button>
                   <button
                     onClick={() => {
                       setCustomKeywords((prev) =>
