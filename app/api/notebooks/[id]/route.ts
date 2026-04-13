@@ -16,10 +16,13 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const { name } = await req.json();
+  const body = await req.json();
   const notebook = await prisma.notebook.update({
     where: { id: Number(id) },
-    data: { ...(name !== undefined && { name }) },
+    data: {
+      ...(body.name !== undefined && { name: body.name }),
+      ...(body.coverImage !== undefined && { coverImage: body.coverImage }),
+    },
   });
   return NextResponse.json(notebook);
 }
