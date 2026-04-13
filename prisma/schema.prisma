@@ -23,3 +23,9 @@ model DiagramKeyword {
   x     Float?
   y     Float?
 }
+
+model TermDefinition {
+  id         String @id @default(uuid())
+  term       String @unique
+  definition String
+}

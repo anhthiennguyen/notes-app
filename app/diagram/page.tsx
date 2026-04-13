@@ -239,6 +239,9 @@ export default function DiagramPage() {
   const [newKw, setNewKw] = useState("");
   const [newKwColor, setNewKwColor] = useState("#f59e0b");
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const [definitions, setDefinitions] = useState<Record<string, string>>({});
+  const [defKwId, setDefKwId] = useState<string | null>(null);
+  const [defInput, setDefInput] = useState("");
 
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<Bubble, undefined> | null>(null);
@@ -249,6 +252,7 @@ export default function DiagramPage() {
   const zoomRef = useRef(1);
   const customKeywordsRef = useRef(customKeywords);
   const bubblesRef = useRef(bubbles);
+  const definitionsRef = useRef<Record<string, string>>({});
   const clusterOverridesRef = useRef<Record<string, { x: number; y: number }>>({});
   const saveCallbackRef = useRef<() => void>(() => {});
 
@@ -303,6 +307,18 @@ export default function DiagramPage() {
   });
   const [size, setSize] = useState({ w: 900, h: 700 });
 
+  // Load term definitions from DB
+  useEffect(() => {
+    fetch("/api/term-definitions")
+      .then((r) => r.json())
+      .then((d: { term: string; definition: string }[]) => {
+        if (!Array.isArray(d)) return;
+        const map: Record<string, string> = {};
+        d.forEach(({ term, definition }) => { map[term] = definition; });
+        setDefinitions(map);
+      });
+  }, []);
+
   // Load keywords from DB
   useEffect(() => {
     fetch("/api/diagram-keywords")
@@ -321,6 +337,7 @@ export default function DiagramPage() {
 
   // Keep bubbles ref in sync
   useEffect(() => { bubblesRef.current = bubbles; }, [bubbles]);
+  useEffect(() => { definitionsRef.current = definitions; }, [definitions]);
 
   // Keep keyword ref in sync — rebuild enclosure layer, kick simulation
   useEffect(() => {
@@ -700,7 +717,16 @@ export default function DiagramPage() {
           {customKeywords.length > 0 && (
             <ul className="flex flex-col gap-1">
               {customKeywords.map((kw) => (
-                <li key={kw.id} className="flex items-center gap-1 text-xs">
+                <li
+                  key={kw.id}
+                  className="flex flex-col gap-0.5"
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setDefKwId((prev) => prev === kw.id ? null : kw.id);
+                    setDefInput(definitions[kw.text] ?? "");
+                  }}
+                >
+                <div className="flex items-center gap-1 text-xs">
                   <label className="relative w-3 h-3 shrink-0 cursor-pointer">
                     <span className="block w-3 h-3 rounded-full border-2" style={{ borderColor: kw.color, backgroundColor: kw.color + "33" }} />
                     <input
@@ -779,6 +805,43 @@ export default function DiagramPage() {
                   >
                     ✕
                   </button>
+                </div>
+                {defKwId === kw.id && (
+                  <div className="pl-4">
+                    <textarea
+                      value={defInput}
+                      onChange={(e) => setDefInput(e.target.value)}
+                      onKeyDown={(e) => e.stopPropagation()}
+                      placeholder="Add a definition…"
+                      rows={3}
+                      autoFocus
+                      className="w-full text-xs rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:text-zinc-200 px-2 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-black"
+                    />
+                    <div className="flex gap-1 mt-1">
+                      <button
+                        onClick={() => {
+                          const definition = defInput.trim();
+                          fetch("/api/term-definitions", {
+                            method: "PUT",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ term: kw.text, definition }),
+                          });
+                          setDefinitions((prev) => ({ ...prev, [kw.text]: definition }));
+                          setDefKwId(null);
+                        }}
+                        className="text-xs bg-black hover:bg-zinc-800 text-white rounded px-2 py-0.5 transition-colors"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setDefKwId(null)}
+                        className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
                 </li>
               ))}
             </ul>
