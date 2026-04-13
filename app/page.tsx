@@ -11,7 +11,7 @@ import { FoldableHeading } from "@/lib/foldable-heading";
 import { Indent, CLEANUP_RULES } from "@/lib/indent";
 
 type NoteMeta = { id: number; title: string; updatedAt: string };
-type Note = NoteMeta & { content: string };
+type Note = NoteMeta & { content: string; maxWidth?: number | null };
 type HeadingEntry = { level: number; text: string; pos: number };
 
 // ── Heading dropdown ────────────────────────────────────────────────────────
@@ -428,6 +428,21 @@ export default function Home() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dirty, activeNote, title, editor]);
 
+  // Debounce-save maxWidth when it changes
+  useEffect(() => {
+    if (!activeNote) return;
+    const id = activeNote.id;
+    const t = setTimeout(() => {
+      fetch(`/api/notes/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxWidth }),
+      });
+    }, 500);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [maxWidth]);
+
   async function fetchNotes() {
     const res = await fetch("/api/notes");
     const data = await res.json();
@@ -441,6 +456,7 @@ export default function Home() {
     const note: Note = await res.json();
     setActiveNote(note);
     setTitle(note.title);
+    setMaxWidth(note.maxWidth ?? 56);
     setDirty(false);
     editor?.commands.setContent(note.content);
     if (editor) extractHeadings(editor);

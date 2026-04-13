@@ -238,7 +238,6 @@ export default function DiagramPage() {
   const showBordersRef = useRef(true);
   const [isolatedKwId, setIsolatedKwId] = useState<string | null>(null);
   const isolatedKwIdRef = useRef<string | null>(null);
-  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [newKw, setNewKw] = useState("");
   const [newKwColor, setNewKwColor] = useState("#f59e0b");
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -248,6 +247,8 @@ export default function DiagramPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
   const panRef = useRef({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
   const customKeywordsRef = useRef(customKeywords);
   const bubblesRef = useRef(bubbles);
   const clusterOverridesRef = useRef<Record<string, { x: number; y: number }>>({});
@@ -361,6 +362,13 @@ export default function DiagramPage() {
   }, [customKeywords]);
 
   useEffect(() => {
+    zoomRef.current = zoom;
+    canvasRef.current?.attr("transform",
+      `translate(${panRef.current.x},${panRef.current.y}) scale(${zoom})`
+    );
+  }, [zoom]);
+
+  useEffect(() => {
     showBordersRef.current = showBorders;
     if (canvasRef.current) applyVisibility(canvasRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -417,18 +425,6 @@ export default function DiagramPage() {
       };
     });
     setBubbles(newBubbles);
-
-    // Compute top keywords by frequency across all labels
-    const freq = new Map<string, number>();
-    newBubbles.forEach((b) => {
-      keyWords(b.label).forEach((w) => freq.set(w, (freq.get(w) ?? 0) + 1));
-    });
-    const top = [...freq.entries()]
-      .filter(([, count]) => count > 1)          // must appear in 2+ bubbles
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([w]) => w);
-    setSuggestions(top);
   }, [size.w, size.h]);
 
   function randomColor() {
@@ -474,7 +470,7 @@ export default function DiagramPage() {
       svg.append("g").attr("class", "canvas");
     }
     const canvas = svg.select<SVGGElement>("g.canvas");
-    canvas.attr("transform", `translate(${panRef.current.x},${panRef.current.y})`);
+    canvas.attr("transform", `translate(${panRef.current.x},${panRef.current.y}) scale(${zoomRef.current})`);
 
     // Pan drag on background rect
     const panDrag = d3.drag<SVGRectElement, unknown>()
@@ -482,7 +478,7 @@ export default function DiagramPage() {
       .on("drag", (event) => {
         panRef.current.x += event.dx;
         panRef.current.y += event.dy;
-        canvas.attr("transform", `translate(${panRef.current.x},${panRef.current.y})`);
+        canvas.attr("transform", `translate(${panRef.current.x},${panRef.current.y}) scale(${zoomRef.current})`);
       })
       .on("end", () => svg.select("rect.bg").attr("cursor", "grab"));
     svg.select<SVGRectElement>("rect.bg").call(panDrag);
@@ -606,14 +602,22 @@ export default function DiagramPage() {
     <div className="flex h-screen bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-sans">
       {/* Sidebar */}
       <aside className="w-56 flex flex-col border-r border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 shrink-0">
-        <div className="p-3 border-b border-zinc-200 dark:border-zinc-700 flex items-center justify-between gap-2">
-          <span className="text-sm font-semibold shrink-0">Diagrams</span>
-          <div className="flex items-center gap-2 min-w-0">
-            {kwDirty && <span className="text-xs text-zinc-400 dark:text-zinc-500 shrink-0">Unsaved</span>}
+        <div className="p-3 border-b border-zinc-200 dark:border-zinc-700 flex flex-col gap-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold">Diagrams</span>
+            <div className="flex items-center gap-2">
+              <button onClick={toggleTheme} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors" title="Toggle dark mode">
+                {dark ? "☀" : "☾"}
+              </button>
+              <Link href="/" className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">← Notes</Link>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {kwDirty && <span className="text-xs text-zinc-400 dark:text-zinc-500">Unsaved</span>}
             <button
               onClick={() => saveKeywords()}
               disabled={!kwDirty}
-              className="text-xs border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-200 disabled:opacity-40 disabled:cursor-default shrink-0"
+              className="text-xs border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-200 disabled:opacity-40 disabled:cursor-default"
             >
               Save
             </button>
@@ -635,10 +639,6 @@ export default function DiagramPage() {
                 ↺
               </button>
             )}
-            <button onClick={toggleTheme} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors" title="Toggle dark mode">
-              {dark ? "☀" : "☾"}
-            </button>
-            <Link href="/" className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors shrink-0">← Notes</Link>
           </div>
         </div>
 
@@ -697,29 +697,6 @@ export default function DiagramPage() {
               +
             </button>
           </div>
-
-          {/* Suggestions */}
-          {suggestions.length > 0 && (
-            <div className="flex flex-col gap-1">
-              <p className="text-xs text-zinc-400 dark:text-zinc-500">Suggested</p>
-              <div className="flex flex-wrap gap-1">
-                {suggestions
-                  .filter((s) => !customKeywords.some((k) => k.text === s))
-                  .map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => setCustomKeywords((prev) => [
-                        ...prev,
-                        { id: crypto.randomUUID(), text: s, color: newKwColor },
-                      ])}
-                      className="flex items-center gap-1 text-xs border border-zinc-300 dark:border-zinc-600 rounded-full px-2 py-0.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-300 transition-colors"
-                    >
-                      {s} <span className="text-zinc-400">+</span>
-                    </button>
-                  ))}
-              </div>
-            </div>
-          )}
 
           {/* Active keywords */}
           {customKeywords.length > 0 && (
@@ -821,6 +798,30 @@ export default function DiagramPage() {
             <p className="text-xs">Nodes sharing keywords cluster together — drag to rearrange, right-click to open in Notes</p>
           </div>
         )}
+        {/* Zoom slider */}
+        <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm">
+          <button
+            onClick={() => setZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
+            className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
+          >−</button>
+          <input
+            type="range"
+            min={0.25} max={3} step={0.05}
+            value={zoom}
+            onChange={(e) => setZoom(+e.target.value)}
+            className="w-24 accent-zinc-600 dark:accent-zinc-400 cursor-pointer"
+          />
+          <button
+            onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))}
+            className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
+          >+</button>
+          <span className="text-xs text-zinc-400 dark:text-zinc-500 w-8 text-right tabular-nums">{Math.round(zoom * 100)}%</span>
+          <button
+            onClick={() => setZoom(1)}
+            className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+            title="Reset zoom"
+          >↺</button>
+        </div>
       </main>
 
       {/* Right-click context menu */}
