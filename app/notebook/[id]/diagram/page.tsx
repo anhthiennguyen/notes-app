@@ -321,6 +321,7 @@ export default function DiagramPage() {
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<Bubble, undefined> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const kwImportRef = useRef<HTMLInputElement>(null);
   const canvasRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
   const panRef = useRef({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -597,6 +598,44 @@ export default function DiagramPage() {
     saveCallbackRef.current();
   }
 
+  function exportKeywords() {
+    const data = JSON.stringify(customKeywords, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `keywords-notebook-${notebookId}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function importKeywords(file: File) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const parsed = JSON.parse(e.target?.result as string);
+        if (!Array.isArray(parsed)) { alert("Invalid keywords file."); return; }
+        const imported: CustomKeyword[] = parsed.map((k) => ({
+          id: k.id ?? crypto.randomUUID(),
+          text: k.text ?? "",
+          color: k.color ?? "#888888",
+          catColor: k.catColor ?? undefined,
+          hidden: k.hidden ?? false,
+          x: k.x ?? null,
+          y: k.y ?? null,
+          category: k.category ?? null,
+        })).filter((k) => k.text.trim());
+        setCustomKeywords(imported);
+        setKwDirty(true);
+      } catch {
+        alert("Failed to parse keywords file.");
+      }
+    };
+    reader.readAsText(file);
+  }
+
   // ── Combined render + simulate + drag effect ───────────────────────────────
   useEffect(() => {
     if (!svgRef.current) return;
@@ -805,6 +844,18 @@ export default function DiagramPage() {
 
   return (
     <div className="flex h-screen overflow-hidden">
+      {/* Hidden file input for keyword import */}
+      <input
+        ref={kwImportRef}
+        type="file"
+        accept=".json"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) importKeywords(f);
+          e.target.value = "";
+        }}
+      />
       {/* Notes iframe panel */}
       {splitOpen && (
         <>
@@ -866,6 +917,20 @@ export default function DiagramPage() {
               className="text-xs border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-200 disabled:opacity-40 disabled:cursor-default"
             >
               Save
+            </button>
+            <button
+              onClick={exportKeywords}
+              className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+              title="Export keywords as JSON"
+            >
+              ↓
+            </button>
+            <button
+              onClick={() => kwImportRef.current?.click()}
+              className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+              title="Import keywords from JSON"
+            >
+              ↑
             </button>
             <button
               onClick={() => setShowBorders((v) => !v)}
