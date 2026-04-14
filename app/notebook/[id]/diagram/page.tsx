@@ -93,13 +93,15 @@ interface Bubble extends d3.SimulationNodeDatum {
   label: string;
   nodeType: string;
   radius: number;
-  color: string;
+  color: string;       // fill: category color (or keyword color if uncategorized)
+  borderColor: string; // stroke: individual keyword color
 }
 
 interface CustomKeyword {
   id: string;
   text: string;
-  color: string;
+  color: string;      // individual keyword color → bubble border
+  catColor?: string;  // category color → bubble fill (stored separately so pickers don't interfere)
   hidden?: boolean;
   x?: number | null;
   y?: number | null;
@@ -461,15 +463,17 @@ export default function DiagramPage() {
       buildEnclosureLayer(canvas, customKeywords);
       attachEnclosureDrags(canvas, bubblesRef, customKeywordsRef, simRef, clusterOverridesRef, saveCallbackRef, selectedKwIdsRef, setSelectedKwIds);
       applyVisibility(canvas);
-      // Color-coordinate matching bubbles to their keyword color
+      // Update bubble fill (catColor if categorized, else kw.color) and border (kw.color)
       customKeywords.forEach((kw) => {
+        const fillColor = kw.category ? (kw.catColor ?? kw.color) : kw.color;
         bubblesRef.current
           .filter((b) => b.label.toLowerCase().includes(kw.text.toLowerCase()))
-          .forEach((b) => { b.color = kw.color; });
+          .forEach((b) => { b.color = fillColor; b.borderColor = kw.color; });
       });
       canvas.selectAll<SVGGElement, Bubble>("g.bubble")
-        .select("circle:first-child")
-        .attr("fill", (d) => d.color);
+        .select("circle.bubble-main")
+        .attr("fill", (d) => d.color)
+        .attr("stroke", (d) => d.borderColor);
     }
     if (simRef.current) {
       simRef.current.alphaTarget(0.3).restart();
@@ -540,17 +544,23 @@ export default function DiagramPage() {
     setActiveNote(note);
     const items = parseNoteHtml(note.content);
     const clusters = buildKeywordClusters(items);
+    const defaultColor = (i: number) => PALETTE[clusters[i] % PALETTE.length];
     const newBubbles = items.map((item, i) => {
       const kw = customKeywordsRef.current.find((k) =>
         item.label.toLowerCase().includes(k.text.toLowerCase())
       );
+      const fillColor = kw
+        ? (kw.category ? (kw.catColor ?? kw.color) : kw.color)
+        : defaultColor(i);
+      const borderColor = kw ? kw.color : defaultColor(i);
       return {
         id: item.id,
         label: item.label,
         nodeType: item.nodeType,
         cluster: clusters[i],
         radius: RADIUS[item.nodeType] ?? 36,
-        color: kw ? kw.color : PALETTE[clusters[i] % PALETTE.length],
+        color: fillColor,
+        borderColor,
         x: size.w / 2 + (Math.random() - 0.5) * 200,
         y: size.h / 2 + (Math.random() - 0.5) * 200,
       };
@@ -559,7 +569,19 @@ export default function DiagramPage() {
   }, [size.w, size.h]);
 
   function randomColor() {
-    return PALETTE[Math.floor(Math.random() * PALETTE.length)];
+    const usedColors = new Set(customKeywords.map((k) => k.color.toLowerCase()));
+    const available = PALETTE.filter((c) => !usedColors.has(c.toLowerCase()));
+    if (available.length > 0) {
+      return available[Math.floor(Math.random() * available.length)];
+    }
+    // All palette colors taken — generate a random hex not already in use
+    let candidate = "";
+    let attempts = 0;
+    do {
+      candidate = "#" + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0");
+      attempts++;
+    } while (usedColors.has(candidate) && attempts < 100);
+    return candidate;
   }
 
   function addKeyword() {
@@ -685,8 +707,11 @@ export default function DiagramPage() {
       .attr("transform", (d) => `translate(${d.x ?? 0},${d.y ?? 0})`);
 
     groups.append("circle")
+      .attr("class", "bubble-main")
       .attr("r", (d) => d.radius)
       .attr("fill", (d) => d.color)
+      .attr("stroke", (d) => d.borderColor)
+      .attr("stroke-width", 3)
       .attr("filter", "url(#bshadow)")
       .attr("opacity", 0.92);
 
@@ -995,9 +1020,11 @@ export default function DiagramPage() {
                   setCustomKeywords((prev) => {
                     const dragged = prev.find((k) => k.id === dragKwId);
                     if (!dragged) return prev;
+                    const targetCat = kw.category ?? null;
+                    const catColor = targetCat ? prev.find((k) => k.category === targetCat)?.catColor : null;
                     const without = prev.filter((k) => k.id !== dragKwId);
                     const idx = without.findIndex((k) => k.id === kw.id);
-                    const updated = { ...dragged, category: kw.category ?? null };
+                    const updated = { ...dragged, category: targetCat, ...(catColor ? { catColor } : {}) };
                     without.splice(idx, 0, updated);
                     return without;
                   });
@@ -1013,6 +1040,7 @@ export default function DiagramPage() {
                 <div className="flex items-center gap-1 text-xs">
                   {/* Drag handle */}
                   <span className="cursor-grab text-zinc-300 dark:text-zinc-600 select-none shrink-0" title="Drag to reorder">⠿</span>
+                  {/* Individual color picker — affects enclosure border only */}
                   <label className="relative w-3 h-3 shrink-0 cursor-pointer">
                     <span className="block w-3 h-3 rounded-full border-2" style={{ borderColor: kw.color, backgroundColor: kw.color + "33" }} />
                     <input
@@ -1024,7 +1052,7 @@ export default function DiagramPage() {
                         setKwDirty(true);
                       }}
                       className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                      title="Change color"
+                      title="Change enclosure color"
                     />
                   </label>
                   <span className={`flex-1 truncate ${kw.hidden ? "text-zinc-400 dark:text-zinc-500 line-through" : "dark:text-zinc-300"}`}>{kw.text}</span>
@@ -1049,7 +1077,7 @@ export default function DiagramPage() {
                   <button
                     onClick={() => { setCustomKeywords((prev) => prev.map((k) => k.id === kw.id ? { ...k, color: randomColor() } : k)); setKwDirty(true); }}
                     className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
-                    title="Random color"
+                    title="Random enclosure color"
                   >
                     <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4h2l8 8h2M12 4h2M2 12h2" /><polyline points="10 4 12 4 12 6" /><polyline points="4 12 2 12 2 10" /></svg>
                   </button>
@@ -1092,11 +1120,34 @@ export default function DiagramPage() {
                         onDrop={(e) => {
                           e.stopPropagation();
                           if (!dragKwId) return;
-                          setCustomKeywords((prev) => prev.map((k) => k.id === dragKwId ? { ...k, category: cat } : k));
+                          setCustomKeywords((prev) => {
+                            const catColor = prev.find((k) => k.category === cat)?.catColor;
+                            return prev.map((k) => k.id === dragKwId ? { ...k, category: cat, ...(catColor ? { catColor } : {}) } : k);
+                          });
                           setKwDirty(true);
                           setDragOverCat(null);
                         }}
                       >
+                        {/* Category color swatch — reads/writes catColor, never touches kw.color */}
+                        {(() => {
+                          const catColor = kws[0]?.catColor ?? "#888888";
+                          return (
+                            <label className="relative w-3 h-3 shrink-0 cursor-pointer">
+                              <span className="block w-3 h-3 rounded-full border-2" style={{ borderColor: catColor, backgroundColor: catColor + "33" }} />
+                              <input
+                                type="color"
+                                value={catColor}
+                                onChange={(e) => {
+                                  const c = e.target.value;
+                                  setCustomKeywords((prev) => prev.map((k) => k.category === cat ? { ...k, catColor: c } : k));
+                                  setKwDirty(true);
+                                }}
+                                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                                title="Category color"
+                              />
+                            </label>
+                          );
+                        })()}
                         {editingCat === cat ? (
                           <>
                             <input
@@ -1126,6 +1177,17 @@ export default function DiagramPage() {
                             title="Click to rename"
                           >{cat}</span>
                         )}
+                        <button
+                          onClick={() => {
+                            const catColor = randomColor();
+                            setCustomKeywords((prev) => prev.map((k) => k.category === cat ? { ...k, catColor } : k));
+                            setKwDirty(true);
+                          }}
+                          className="text-zinc-300 hover:text-zinc-700 dark:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
+                          title="Random category color"
+                        >
+                          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4h2l8 8h2M12 4h2M2 12h2" /><polyline points="10 4 12 4 12 6" /><polyline points="4 12 2 12 2 10" /></svg>
+                        </button>
                         <button
                           onClick={() => { setExtraCats((prev) => prev.filter((c) => c !== cat)); setCustomKeywords((prev) => prev.map((k) => k.category === cat ? { ...k, category: null } : k)); setKwDirty(true); }}
                           className="text-zinc-300 hover:text-red-400 dark:text-zinc-600 dark:hover:text-red-400 text-xs transition-colors"

@@ -32,6 +32,7 @@ model DiagramKeyword {
   id         String   @id @default(uuid())
   text       String
   color      String
+  catColor   String?
   x          Float?
   y          Float?
   category   String?
