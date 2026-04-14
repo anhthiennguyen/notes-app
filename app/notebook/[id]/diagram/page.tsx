@@ -1369,7 +1369,7 @@ export default function DiagramPage() {
           </svg>
         )}
         {/* Zoom slider */}
-        <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm">
+        <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm">
           <button
             onClick={() => setZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
             className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"

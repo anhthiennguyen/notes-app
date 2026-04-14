@@ -829,7 +829,7 @@ export default function NotebookPage() {
               />
             </div>
             {/* Zoom slider — outside scroll area so it stays fixed */}
-            <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm z-10">
+            <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm z-10">
               <button
                 onClick={() => setZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
                 className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
