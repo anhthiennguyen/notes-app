@@ -63,6 +63,54 @@ function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
   ctx.restore();
 }
 
+type ShapeTool = "rect" | "ellipse" | "line" | "arrow";
+
+function drawShape(ctx: CanvasRenderingContext2D, shape: ShapeTool, from: Point, to: Point, color: string, width: number) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = width;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.globalCompositeOperation = "source-over";
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  ctx.beginPath();
+  if (shape === "rect") {
+    ctx.strokeRect(from.x, from.y, dx, dy);
+  } else if (shape === "ellipse") {
+    const cx = (from.x + to.x) / 2;
+    const cy = (from.y + to.y) / 2;
+    ctx.ellipse(cx, cy, Math.abs(dx) / 2, Math.abs(dy) / 2, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  } else if (shape === "line") {
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+  } else if (shape === "arrow") {
+    ctx.moveTo(from.x, from.y);
+    ctx.lineTo(to.x, to.y);
+    ctx.stroke();
+    // Arrowhead
+    const angle = Math.atan2(dy, dx);
+    const headLen = Math.max(width * 4, 16);
+    ctx.beginPath();
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - headLen * Math.cos(angle - Math.PI / 6), to.y - headLen * Math.sin(angle - Math.PI / 6));
+    ctx.moveTo(to.x, to.y);
+    ctx.lineTo(to.x - headLen * Math.cos(angle + Math.PI / 6), to.y - headLen * Math.sin(angle + Math.PI / 6));
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+const SHAPE_TOOLS: { type: ShapeTool; label: string }[] = [
+  { type: "rect",    label: "□  Square" },
+  { type: "ellipse", label: "○  Circle" },
+  { type: "line",    label: "—  Line"   },
+  { type: "arrow",   label: "→  Arrow"  },
+];
+
 // ── Drawing NodeView ──────────────────────────────────────────────────────────
 
 function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
@@ -74,9 +122,11 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
   const committedRef = useRef<ImageData | null>(null);
   const currentStrokeRef = useRef<Stroke | null>(null);
   const isDrawingRef = useRef(false);
+  const shapeStartRef = useRef<Point | null>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
 
-  const [tool, setTool] = useState<"pen" | "eraser" | "text">("pen");
+  const [tool, setTool] = useState<"pen" | "eraser" | "text" | "rect" | "ellipse" | "line" | "arrow">("pen");
+  const [shapeMenuOpen, setShapeMenuOpen] = useState(false);
   const [color, setColor] = useState("#000000");
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [fontSize, setFontSize] = useState(20);
@@ -183,18 +233,25 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
     };
   }
 
-  function renderLive() {
+  const isShapeTool = (t: typeof tool): t is ShapeTool =>
+    t === "rect" || t === "ellipse" || t === "line" || t === "arrow";
+
+  function renderLive(shapeEnd?: Point) {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext("2d");
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (committedRef.current) ctx.putImageData(committedRef.current, 0, 0);
     if (currentStrokeRef.current) drawStroke(ctx, currentStrokeRef.current);
+    if (isShapeTool(tool) && shapeStartRef.current && shapeEnd) {
+      drawShape(ctx, tool, shapeStartRef.current, shapeEnd, color, strokeWidth);
+    }
   }
 
   function onMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
     e.preventDefault();
     e.stopPropagation();
+    setShapeMenuOpen(false);
 
     if (tool === "text") {
       const canvas = canvasRef.current!;
@@ -212,27 +269,45 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
 
     isDrawingRef.current = true;
     saveCommitted();
-    currentStrokeRef.current = {
-      id: crypto.randomUUID(),
-      color,
-      width: tool === "eraser" ? strokeWidth * 4 : strokeWidth,
-      eraser: tool === "eraser",
-      points: [getPoint(e)],
-    };
-    renderLive();
+
+    if (isShapeTool(tool)) {
+      shapeStartRef.current = getPoint(e);
+    } else {
+      currentStrokeRef.current = {
+        id: crypto.randomUUID(),
+        color,
+        width: tool === "eraser" ? strokeWidth * 4 : strokeWidth,
+        eraser: tool === "eraser",
+        points: [getPoint(e)],
+      };
+      renderLive();
+    }
   }
 
   function onMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
-    if (!isDrawingRef.current || !currentStrokeRef.current) return;
-    currentStrokeRef.current.points.push(getPoint(e));
-    renderLive();
+    if (!isDrawingRef.current) return;
+    if (isShapeTool(tool)) {
+      renderLive(getPoint(e));
+    } else if (currentStrokeRef.current) {
+      currentStrokeRef.current.points.push(getPoint(e));
+      renderLive();
+    }
   }
 
   function finishStroke(e?: React.MouseEvent<HTMLCanvasElement>) {
-    if (!isDrawingRef.current || !currentStrokeRef.current) return;
+    if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
-    if (e) currentStrokeRef.current.points.push(getPoint(e));
-    currentStrokeRef.current = null;
+    if (isShapeTool(tool)) {
+      if (e && shapeStartRef.current) {
+        const canvas = canvasRef.current;
+        const ctx = canvas?.getContext("2d");
+        if (ctx) drawShape(ctx, tool, shapeStartRef.current, getPoint(e), color, strokeWidth);
+      }
+      shapeStartRef.current = null;
+    } else if (currentStrokeRef.current) {
+      if (e) currentStrokeRef.current.points.push(getPoint(e));
+      currentStrokeRef.current = null;
+    }
     saveCommitted();
     pushHistory();
   }
@@ -276,6 +351,7 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
   const btnOff = `${btnBase} border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-300`;
 
   const cursor = active ? (tool === "eraser" ? "cell" : tool === "text" ? "text" : "crosshair") : "default";
+  const currentShapeLabel = SHAPE_TOOLS.find((s) => s.type === tool)?.label.split("\u00a0")[0].trim() ?? "⬡";
 
   // CSS-space font size for the floating input
   const cssScale = (canvasRef.current?.getBoundingClientRect().width ?? CANVAS_W) / CANVAS_W;
@@ -296,6 +372,30 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
             <button onClick={() => setTool("pen")}    className={tool === "pen"    ? btnOn : btnOff} title="Pen">✏</button>
             <button onClick={() => setTool("eraser")} className={tool === "eraser" ? btnOn : btnOff} title="Eraser">⌫</button>
             <button onClick={() => setTool("text")}   className={tool === "text"   ? btnOn : btnOff} title="Text">T</button>
+
+            {/* Shapes dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShapeMenuOpen((v) => !v)}
+                className={isShapeTool(tool) ? btnOn : btnOff}
+                title="Shapes"
+              >
+                {tool === "rect" ? "□" : tool === "ellipse" ? "○" : tool === "line" ? "—" : tool === "arrow" ? "→" : "⬡"} ▾
+              </button>
+              {shapeMenuOpen && (
+                <div className="absolute top-full left-0 mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded shadow-md z-20 py-1 min-w-[110px]">
+                  {SHAPE_TOOLS.map(({ type, label }) => (
+                    <button
+                      key={type}
+                      onClick={() => { setTool(type); setShapeMenuOpen(false); }}
+                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200 transition-colors ${tool === type ? "font-semibold" : ""}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-600 mx-0.5" />
 
