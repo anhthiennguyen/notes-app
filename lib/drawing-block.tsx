@@ -3,127 +3,215 @@
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 type Point = { x: number; y: number };
 type Stroke = { id: string; color: string; width: number; eraser: boolean; points: Point[] };
 
-// ── Drawing NodeView ─────────────────────────────────────────────────────────
+// ── Constants ────────────────────────────────────────────────────────────────
 
 const PRESET_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#000000"];
 const WIDTHS = [2, 4, 8, 16];
+const CANVAS_W = 1200; // fixed pixel width; CSS scales to 100%
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function loadImage(canvas: HTMLCanvasElement, dataUrl: string): Promise<void> {
+  return new Promise((resolve) => {
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return resolve();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (!dataUrl) return resolve();
+    const img = new Image();
+    img.onload = () => { ctx.drawImage(img, 0, 0); resolve(); };
+    img.onerror = () => resolve();
+    img.src = dataUrl;
+  });
+}
+
+function drawStroke(ctx: CanvasRenderingContext2D, stroke: Stroke) {
+  if (!stroke.points.length) return;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.lineWidth = stroke.width;
+  if (stroke.eraser) {
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.strokeStyle = ctx.fillStyle = "rgba(0,0,0,1)";
+  } else {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = ctx.fillStyle = stroke.color;
+  }
+  if (stroke.points.length === 1) {
+    ctx.beginPath();
+    ctx.arc(stroke.points[0].x, stroke.points[0].y, stroke.width / 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+    for (let i = 1; i < stroke.points.length - 1; i++) {
+      const mx = (stroke.points[i].x + stroke.points[i + 1].x) / 2;
+      const my = (stroke.points[i].y + stroke.points[i + 1].y) / 2;
+      ctx.quadraticCurveTo(stroke.points[i].x, stroke.points[i].y, mx, my);
+    }
+    const last = stroke.points[stroke.points.length - 1];
+    ctx.lineTo(last.x, last.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ── Drawing NodeView ──────────────────────────────────────────────────────────
 
 function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const baseImageRef = useRef<HTMLImageElement | null>(null);
-  const sessionStrokesRef = useRef<Stroke[]>([]);
+  // History: array of data-URL snapshots; index points to current state
+  const historyRef = useRef<string[]>([""]);
+  const historyIndexRef = useRef(0);
+  // ImageData snapshot of the last committed state (for live stroke preview)
+  const committedRef = useRef<ImageData | null>(null);
   const currentStrokeRef = useRef<Stroke | null>(null);
   const isDrawingRef = useRef(false);
+  const textInputRef = useRef<HTMLInputElement>(null);
 
-  const [tool, setTool] = useState<"pen" | "eraser">("pen");
+  const [tool, setTool] = useState<"pen" | "eraser" | "text">("pen");
   const [color, setColor] = useState("#ef4444");
   const [strokeWidth, setStrokeWidth] = useState(3);
-  const [sessionStrokes, setSessionStrokes] = useState<Stroke[]>([]);
+  const [fontSize, setFontSize] = useState(20);
   const [active, setActive] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const [pendingText, setPendingText] = useState<{ cx: number; cy: number; sx: number; sy: number } | null>(null);
+  const [textValue, setTextValue] = useState("");
 
   const height: number = node.attrs.height ?? 200;
 
-  // ── Rendering ──────────────────────────────────────────────────────────────
+  // ── History helpers ───────────────────────────────────────────────────────
 
-  const renderAll = useCallback(() => {
+  function snapshotCanvas(): string {
+    return canvasRef.current?.toDataURL("image/png") ?? "";
+  }
+
+  function saveCommitted() {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (baseImageRef.current) {
-      ctx.drawImage(baseImageRef.current, 0, 0, canvas.width, canvas.height);
-    }
-    const all: Stroke[] = [
-      ...sessionStrokesRef.current,
-      ...(currentStrokeRef.current ? [currentStrokeRef.current] : []),
-    ];
-    for (const stroke of all) {
-      if (stroke.points.length === 0) continue;
-      ctx.save();
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.lineWidth = stroke.width;
-      if (stroke.eraser) {
-        ctx.globalCompositeOperation = "destination-out";
-        ctx.strokeStyle = "rgba(0,0,0,1)";
-        ctx.fillStyle = "rgba(0,0,0,1)";
-      } else {
-        ctx.globalCompositeOperation = "source-over";
-        ctx.strokeStyle = stroke.color;
-        ctx.fillStyle = stroke.color;
-      }
-      if (stroke.points.length === 1) {
-        ctx.beginPath();
-        ctx.arc(stroke.points[0].x, stroke.points[0].y, stroke.width / 2, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.beginPath();
-        ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-        for (let i = 1; i < stroke.points.length - 1; i++) {
-          const mx = (stroke.points[i].x + stroke.points[i + 1].x) / 2;
-          const my = (stroke.points[i].y + stroke.points[i + 1].y) / 2;
-          ctx.quadraticCurveTo(stroke.points[i].x, stroke.points[i].y, mx, my);
-        }
-        const last = stroke.points[stroke.points.length - 1];
-        ctx.lineTo(last.x, last.y);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
-  }, []);
+    const ctx = canvas?.getContext("2d");
+    if (ctx && canvas) committedRef.current = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  }
 
-  // ── Load existing image on mount ───────────────────────────────────────────
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.width = canvas.offsetWidth || 800;
-    canvas.height = height;
-    if (node.attrs.data) {
-      const img = new Image();
-      img.onload = () => {
-        baseImageRef.current = img;
-        renderAll();
-      };
-      img.src = node.attrs.data;
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Re-render when session strokes change and save PNG to attrs
-  useEffect(() => {
-    sessionStrokesRef.current = sessionStrokes;
-    renderAll();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dataUrl = canvas.toDataURL("image/png");
+  function pushHistory() {
+    const dataUrl = snapshotCanvas();
+    const next = historyRef.current.slice(0, historyIndexRef.current + 1);
+    next.push(dataUrl);
+    historyRef.current = next;
+    historyIndexRef.current = next.length - 1;
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(false);
     setTimeout(() => updateAttributes({ data: dataUrl }), 0);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionStrokes]);
+  }
 
-  // ── Mouse events ───────────────────────────────────────────────────────────
+  function undo() {
+    if (historyIndexRef.current <= 0) return;
+    historyIndexRef.current--;
+    const dataUrl = historyRef.current[historyIndexRef.current];
+    loadImage(canvasRef.current!, dataUrl).then(() => {
+      saveCommitted();
+      setTimeout(() => updateAttributes({ data: dataUrl }), 0);
+    });
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(true);
+  }
+
+  function redo() {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    historyIndexRef.current++;
+    const dataUrl = historyRef.current[historyIndexRef.current];
+    loadImage(canvasRef.current!, dataUrl).then(() => {
+      saveCommitted();
+      setTimeout(() => updateAttributes({ data: dataUrl }), 0);
+    });
+    setCanUndo(true);
+    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+  }
+
+  // Refs so keyboard handler never goes stale
+  const undoRef = useRef(undo);
+  const redoRef = useRef(redo);
+  undoRef.current = undo;
+  redoRef.current = redo;
+
+  // ── Keyboard shortcuts (capture phase to beat TipTap) ────────────────────
+
+  useEffect(() => {
+    if (!active) return;
+    function onKey(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey)) return;
+      if (e.key === "z" && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); undoRef.current(); }
+      else if ((e.key === "z" && e.shiftKey) || e.key === "y") { e.preventDefault(); e.stopPropagation(); redoRef.current(); }
+    }
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [active]);
+
+  // ── Mount: load saved image ───────────────────────────────────────────────
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.width = CANVAS_W;
+    canvas.height = height;
+    const initial = node.attrs.data ?? "";
+    loadImage(canvas, initial).then(() => {
+      saveCommitted();
+      historyRef.current = [initial];
+      historyIndexRef.current = 0;
+      setCanUndo(false);
+      setCanRedo(false);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Mouse helpers ─────────────────────────────────────────────────────────
 
   function getPoint(e: React.MouseEvent<HTMLCanvasElement>): Point {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     return {
-      x: (e.clientX - rect.left) * (canvas.width / rect.width),
+      x: (e.clientX - rect.left) * (CANVAS_W / rect.width),
       y: (e.clientY - rect.top) * (canvas.height / rect.height),
     };
+  }
+
+  function renderLive() {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!ctx || !canvas) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (committedRef.current) ctx.putImageData(committedRef.current, 0, 0);
+    if (currentStrokeRef.current) drawStroke(ctx, currentStrokeRef.current);
   }
 
   function onMouseDown(e: React.MouseEvent<HTMLCanvasElement>) {
     e.preventDefault();
     e.stopPropagation();
+
+    if (tool === "text") {
+      const canvas = canvasRef.current!;
+      const rect = canvas.getBoundingClientRect();
+      const pt = getPoint(e);
+      setPendingText({
+        cx: pt.x, cy: pt.y,
+        sx: e.clientX - rect.left,
+        sy: e.clientY - rect.top,
+      });
+      setTextValue("");
+      setTimeout(() => textInputRef.current?.focus(), 0);
+      return;
+    }
+
     isDrawingRef.current = true;
+    saveCommitted();
     currentStrokeRef.current = {
       id: crypto.randomUUID(),
       color,
@@ -131,60 +219,67 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
       eraser: tool === "eraser",
       points: [getPoint(e)],
     };
-    renderAll();
+    renderLive();
   }
 
   function onMouseMove(e: React.MouseEvent<HTMLCanvasElement>) {
     if (!isDrawingRef.current || !currentStrokeRef.current) return;
     currentStrokeRef.current.points.push(getPoint(e));
-    renderAll();
+    renderLive();
   }
 
   function finishStroke(e?: React.MouseEvent<HTMLCanvasElement>) {
     if (!isDrawingRef.current || !currentStrokeRef.current) return;
     isDrawingRef.current = false;
     if (e) currentStrokeRef.current.points.push(getPoint(e));
-    if (currentStrokeRef.current.points.length > 0) {
-      const finished = currentStrokeRef.current;
-      currentStrokeRef.current = null;
-      setSessionStrokes((prev) => [...prev, finished]);
-    } else {
-      currentStrokeRef.current = null;
+    currentStrokeRef.current = null;
+    saveCommitted();
+    pushHistory();
+  }
+
+  // ── Text commit ───────────────────────────────────────────────────────────
+
+  function commitText() {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext("2d");
+    if (!canvas || !ctx || !pendingText) { setPendingText(null); return; }
+    if (textValue.trim()) {
+      const scaledFont = fontSize; // canvas px
+      ctx.save();
+      ctx.font = `${scaledFont}px sans-serif`;
+      ctx.fillStyle = color;
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillText(textValue, pendingText.cx, pendingText.cy);
+      ctx.restore();
+      saveCommitted();
+      pushHistory();
     }
+    setPendingText(null);
+    setTextValue("");
   }
 
-  // ── Drawing toolbar actions ────────────────────────────────────────────────
-
-  function undoLast() {
-    setSessionStrokes((prev) => {
-      const next = prev.slice(0, -1);
-      sessionStrokesRef.current = next;
-      renderAll();
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const dataUrl = canvas.toDataURL("image/png");
-        setTimeout(() => updateAttributes({ data: dataUrl }), 0);
-      }
-      return next;
-    });
-  }
+  // ── Clear ─────────────────────────────────────────────────────────────────
 
   function clearAll() {
-    sessionStrokesRef.current = [];
-    setSessionStrokes([]);
-    baseImageRef.current = null;
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
-    updateAttributes({ data: "" });
+    const ctx = canvas?.getContext("2d");
+    if (!ctx || !canvas) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    saveCommitted();
+    pushHistory();
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  // ── UI ────────────────────────────────────────────────────────────────────
 
   const btnBase = "px-2 py-1 rounded text-xs border transition-colors";
-  const btnOn = `${btnBase} bg-zinc-800 text-white border-zinc-800 dark:bg-zinc-200 dark:text-zinc-900 dark:border-zinc-200`;
+  const btnOn  = `${btnBase} bg-zinc-800 text-white border-zinc-800 dark:bg-zinc-200 dark:text-zinc-900 dark:border-zinc-200`;
   const btnOff = `${btnBase} border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-300`;
+
+  const cursor = active ? (tool === "eraser" ? "cell" : tool === "text" ? "text" : "crosshair") : "default";
+
+  // CSS-space font size for the floating input
+  const cssScale = (canvasRef.current?.getBoundingClientRect().width ?? CANVAS_W) / CANVAS_W;
+  const fontSizeCss = fontSize * cssScale;
 
   return (
     <NodeViewWrapper>
@@ -194,12 +289,13 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
         onMouseLeave={() => { setActive(false); finishStroke(); }}
         contentEditable={false}
       >
-        {/* Toolbar — shown on hover/selected */}
+        {/* Floating toolbar */}
         {(active || selected) && (
           <div className="absolute top-1 left-1 right-1 z-10 flex items-center gap-1.5 bg-white/90 dark:bg-zinc-900/90 backdrop-blur-sm rounded px-2 py-1 shadow-sm border border-zinc-200 dark:border-zinc-700 flex-wrap">
-            {/* Tool */}
-            <button onClick={() => setTool("pen")} className={tool === "pen" ? btnOn : btnOff} title="Pen">✏</button>
+            {/* Tools */}
+            <button onClick={() => setTool("pen")}    className={tool === "pen"    ? btnOn : btnOff} title="Pen">✏</button>
             <button onClick={() => setTool("eraser")} className={tool === "eraser" ? btnOn : btnOff} title="Eraser">⌫</button>
+            <button onClick={() => setTool("text")}   className={tool === "text"   ? btnOn : btnOff} title="Text">T</button>
 
             <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-600 mx-0.5" />
 
@@ -207,56 +303,100 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
             {PRESET_COLORS.map((c) => (
               <button
                 key={c}
-                onClick={() => { setColor(c); setTool("pen"); }}
-                className={`w-5 h-5 rounded-full border-2 transition-all ${color === c && tool === "pen" ? "border-blue-500 scale-110" : "border-transparent hover:border-zinc-400"}`}
+                onClick={() => setColor(c)}
+                className={`w-5 h-5 rounded-full border-2 transition-all ${color === c ? "border-blue-500 scale-110" : "border-transparent hover:border-zinc-400"}`}
                 style={{ backgroundColor: c }}
-                title={c}
               />
             ))}
             <input
               type="color"
               value={color}
-              onChange={(e) => { setColor(e.target.value); setTool("pen"); }}
+              onChange={(e) => setColor(e.target.value)}
               className="w-5 h-5 rounded cursor-pointer border border-zinc-300 dark:border-zinc-600 p-0"
               title="Custom color"
             />
 
             <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-600 mx-0.5" />
 
-            {/* Width */}
-            {WIDTHS.map((w) => (
-              <button
-                key={w}
-                onClick={() => setStrokeWidth(w)}
-                className={`rounded-full transition-all border-2 ${strokeWidth === w ? "border-blue-500" : "border-zinc-300 dark:border-zinc-600"}`}
-                style={{ width: `${Math.max(w + 6, 12)}px`, height: `${Math.max(w + 6, 12)}px`, backgroundColor: tool === "eraser" ? "#94a3b8" : color }}
-                title={`${w}px`}
-              />
-            ))}
+            {/* Size controls: stroke widths for pen/eraser, font size for text */}
+            {tool === "text" ? (
+              <select
+                value={fontSize}
+                onChange={(e) => setFontSize(Number(e.target.value))}
+                className="text-xs border border-zinc-300 dark:border-zinc-600 rounded px-1 py-0.5 bg-white dark:bg-zinc-800 dark:text-zinc-200"
+              >
+                {[12, 16, 20, 28, 36, 48].map((s) => <option key={s} value={s}>{s}px</option>)}
+              </select>
+            ) : (
+              WIDTHS.map((w) => (
+                <button
+                  key={w}
+                  onClick={() => setStrokeWidth(w)}
+                  className={`rounded-full transition-all border-2 ${strokeWidth === w ? "border-blue-500" : "border-zinc-300 dark:border-zinc-600"}`}
+                  style={{
+                    width:  `${Math.max(w + 6, 12)}px`,
+                    height: `${Math.max(w + 6, 12)}px`,
+                    backgroundColor: tool === "eraser" ? "#94a3b8" : color,
+                  }}
+                />
+              ))
+            )}
 
             <div className="w-px h-4 bg-zinc-200 dark:bg-zinc-600 mx-0.5" />
 
-            {/* Undo / Clear */}
-            <button onClick={undoLast} className={btnOff} title="Undo last stroke" disabled={sessionStrokes.length === 0}>↩</button>
+            {/* History */}
+            <button onClick={undo} disabled={!canUndo} className={`${btnOff} disabled:opacity-40`} title="Undo (⌘Z)">↩</button>
+            <button onClick={redo} disabled={!canRedo} className={`${btnOff} disabled:opacity-40`} title="Redo (⌘⇧Z)">↪</button>
             <button onClick={clearAll} className={`${btnOff} hover:text-red-500`} title="Clear all">✕</button>
           </div>
         )}
 
-        <canvas
-          ref={canvasRef}
-          height={height}
-          style={{ width: "100%", height: `${height}px`, display: "block", cursor: active ? (tool === "eraser" ? "cell" : "crosshair") : "default" }}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={(e) => finishStroke(e)}
-          onMouseLeave={() => finishStroke()}
-        />
+        {/* Canvas + text input overlay */}
+        <div className="relative">
+          <canvas
+            ref={canvasRef}
+            height={height}
+            style={{ width: "100%", height: `${height}px`, display: "block", cursor }}
+            onMouseDown={onMouseDown}
+            onMouseMove={onMouseMove}
+            onMouseUp={(e) => finishStroke(e)}
+            onMouseLeave={() => finishStroke()}
+          />
+
+          {pendingText && (
+            <input
+              ref={textInputRef}
+              value={textValue}
+              onChange={(e) => setTextValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter")  { e.preventDefault(); commitText(); }
+                if (e.key === "Escape") { setPendingText(null); }
+                e.stopPropagation();
+              }}
+              onBlur={commitText}
+              style={{
+                position: "absolute",
+                left: `${pendingText.sx}px`,
+                top:  `${pendingText.sy - fontSizeCss}px`,
+                fontSize: `${fontSizeCss}px`,
+                color,
+                background: "transparent",
+                border: "none",
+                outline: "1px dashed rgba(128,128,128,0.5)",
+                minWidth: "4ch",
+                lineHeight: 1,
+                padding: 0,
+                caretColor: color,
+              }}
+            />
+          )}
+        </div>
       </div>
     </NodeViewWrapper>
   );
 }
 
-// ── TipTap Extension ─────────────────────────────────────────────────────────
+// ── TipTap Extension ──────────────────────────────────────────────────────────
 
 export const DrawingBlock = Node.create({
   name: "drawingBlock",
@@ -266,33 +406,28 @@ export const DrawingBlock = Node.create({
 
   addAttributes() {
     return {
-      data: { default: "" },
+      data:   { default: "" },
       height: { default: 200 },
     };
   },
 
   parseHTML() {
-    return [
-      {
-        tag: 'div[data-type="drawing-block"]',
-        getAttrs: (el) => ({
-          data: (el as HTMLElement).getAttribute("data-drawing") ?? "",
-          height: parseInt((el as HTMLElement).getAttribute("data-height") ?? "200", 10),
-        }),
-      },
-    ];
+    return [{
+      tag: 'div[data-type="drawing-block"]',
+      getAttrs: (el) => ({
+        data:   (el as HTMLElement).getAttribute("data-drawing") ?? "",
+        height: parseInt((el as HTMLElement).getAttribute("data-height") ?? "200", 10),
+      }),
+    }];
   },
 
   renderHTML({ HTMLAttributes }) {
-    return [
-      "div",
-      mergeAttributes({
-        "data-type": "drawing-block",
-        "data-drawing": HTMLAttributes.data ?? "",
-        "data-height": HTMLAttributes.height ?? 200,
-        class: "drawing-block",
-      }),
-    ];
+    return ["div", mergeAttributes({
+      "data-type":    "drawing-block",
+      "data-drawing": HTMLAttributes.data ?? "",
+      "data-height":  HTMLAttributes.height ?? 200,
+      class:          "drawing-block",
+    })];
   },
 
   addNodeView() {
