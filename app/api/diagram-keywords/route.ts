@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const notebookId = req.nextUrl.searchParams.get("notebookId");
-    const keywords: { id: string; text: string; color: string; catColor?: string | null; x?: number | null; y?: number | null; category?: string | null }[] = await req.json();
+    const keywords: { id: string; text: string; color: string; order?: number; x?: number | null; y?: number | null; categoryId?: string | null }[] = await req.json();
     if (notebookId) {
       await prisma.diagramKeyword.deleteMany({ where: { notebookId: Number(notebookId) } });
     } else {

@@ -15,6 +15,19 @@ model Notebook {
   updatedAt       DateTime         @updatedAt
   notes           Note[]
   diagramKeywords DiagramKeyword[]
+  categories      Category[]
+}
+
+model Category {
+  id         String     @id @default(uuid())
+  name       String
+  order      Int        @default(0)
+  parentId   String?
+  parent     Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children   Category[] @relation("CategoryTree")
+  notebookId Int?
+  notebook   Notebook?  @relation(fields: [notebookId], references: [id])
+  keywords   DiagramKeyword[]
 }
 
 model Note {
@@ -29,13 +42,14 @@ model Note {
 }
 
 model DiagramKeyword {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   text       String
   color      String
-  catColor   String?
+  order      Int       @default(0)
   x          Float?
   y          Float?
-  category   String?
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id])
   notebookId Int?
   notebook   Notebook? @relation(fields: [notebookId], references: [id])
 }
