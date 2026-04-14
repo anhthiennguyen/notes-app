@@ -5,8 +5,10 @@ export interface Run {
 }
 
 export interface Block {
-  tag: string; // h1–h6, p, li
+  tag: string; // h1–h6, p, li, drawing
   runs: Run[];
+  drawingData?: string; // base64 PNG data URL for drawing blocks
+  drawingHeight?: number;
 }
 
 function decodeEntities(s: string): string {
@@ -48,19 +50,47 @@ function parseInline(html: string, baseBold = false, baseItalic = false): Run[] 
 /** Parse block-level HTML into an array of Blocks */
 export function parseHtmlForExport(html: string): Block[] {
   const blocks: Block[] = [];
-  // Match block tags
-  const blockRe = /<(h[1-6]|p|li)[^>]*>([\s\S]*?)<\/\1>/gi;
+
+  // Interleave drawing blocks and text blocks in document order
+  const drawingRe = /<div[^>]+data-type="drawing-block"[^>]*>/gi;
+  const blockRe = /<(h[1-6]|p|li)([^>]*)>([\s\S]*?)<\/\1>/gi;
+
+  // Collect all matches with their positions
+  type RawMatch = { index: number; end: number; block: Block };
+  const matches: RawMatch[] = [];
+
   let m: RegExpExecArray | null;
 
+  // Drawing blocks
+  while ((m = drawingRe.exec(html)) !== null) {
+    const tag = m[0];
+    const dataMatch = tag.match(/data-drawing="([^"]*)"/);
+    const heightMatch = tag.match(/data-height="(\d+)"/);
+    const data = dataMatch ? dataMatch[1] : "";
+    const height = heightMatch ? parseInt(heightMatch[1], 10) : 200;
+    if (data) {
+      matches.push({
+        index: m.index,
+        end: m.index + m[0].length,
+        block: { tag: "drawing", runs: [], drawingData: data, drawingHeight: height },
+      });
+    }
+  }
+
+  // Text blocks
   while ((m = blockRe.exec(html)) !== null) {
     const tag = m[1].toLowerCase();
-    const inner = m[2];
-    // Heading tags: treat entire heading as bold
+    const inner = m[3];
     const runs = parseInline(inner, tag.startsWith("h"));
     const hasText = runs.some((r) => r.text.trim().length > 0);
-    // Always push paragraphs, even empty ones (they become blank lines)
-    if (hasText || tag === "p") blocks.push({ tag, runs });
+    if (hasText || tag === "p") {
+      matches.push({ index: m.index, end: m.index + m[0].length, block: { tag, runs } });
+    }
   }
+
+  // Sort by document order
+  matches.sort((a, b) => a.index - b.index);
+  for (const { block } of matches) blocks.push(block);
 
   // Fallback: plain text
   if (blocks.length === 0) {

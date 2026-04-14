@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import PDFDocument from "pdfkit";
-import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, ImageRun } from "docx";
 import { parseHtmlForExport, type Block, type Run } from "@/lib/parse-html-for-export";
 
 export async function GET(
@@ -84,6 +84,20 @@ export async function buildPdf(title: string, content: string): Promise<Buffer> 
     doc.moveDown(0.5);
 
     for (const block of parseHtmlForExport(content)) {
+      if (block.tag === "drawing" && block.drawingData) {
+        try {
+          const base64 = block.drawingData.split(",")[1];
+          const imgBuf = Buffer.from(base64, "base64");
+          const imgWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+          const imgHeight = Math.min(block.drawingHeight ?? 200, 400);
+          doc.moveDown(0.4);
+          doc.image(imgBuf, { width: imgWidth, height: imgHeight });
+          doc.moveDown(0.4);
+        } catch {
+          // Skip malformed drawing data
+        }
+        continue;
+      }
       const heading = PDF_HEADING[block.tag];
       const isEmpty = block.runs.every((r) => !r.text.trim());
       if (heading) {
@@ -137,9 +151,32 @@ function blockToDocxParagraph(block: Block): Paragraph {
 }
 
 export async function buildDocx(title: string, content: string): Promise<Buffer> {
-  const children: Paragraph[] = [
+  const bodyChildren: (Paragraph)[] = [
     new Paragraph({ text: title, heading: HeadingLevel.HEADING_1, spacing: { after: 240 } }),
-    ...parseHtmlForExport(content).map(blockToDocxParagraph),
   ];
-  return Packer.toBuffer(new Document({ sections: [{ children }] }));
+
+  for (const block of parseHtmlForExport(content)) {
+    if (block.tag === "drawing" && block.drawingData) {
+      try {
+        const base64 = block.drawingData.split(",")[1];
+        const imgBuf = Buffer.from(base64, "base64");
+        const heightEmu = Math.round(((block.drawingHeight ?? 200) / 96) * 914400);
+        const widthEmu = Math.round((6 * 914400)); // ~6 inches
+        bodyChildren.push(
+          new Paragraph({
+            children: [
+              new ImageRun({ data: imgBuf, transformation: { width: widthEmu / 9144, height: heightEmu / 9144 }, type: "png" }),
+            ],
+            spacing: { after: 120 },
+          })
+        );
+      } catch {
+        // Skip malformed drawing data
+      }
+    } else {
+      bodyChildren.push(blockToDocxParagraph(block));
+    }
+  }
+
+  return Packer.toBuffer(new Document({ sections: [{ children: bodyChildren }] }));
 }

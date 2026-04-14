@@ -23,6 +23,7 @@ export async function PATCH(
       ...(body.title !== undefined && { title: body.title }),
       ...(body.content !== undefined && { content: body.content }),
       ...(body.maxWidth !== undefined && { maxWidth: body.maxWidth }),
+      ...(body.drawingData !== undefined && { drawingData: body.drawingData }),
     },
   });
   return NextResponse.json(note);

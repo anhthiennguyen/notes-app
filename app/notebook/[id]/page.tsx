@@ -10,6 +10,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
 import { FoldableHeading } from "@/lib/foldable-heading";
 import { Indent, CLEANUP_RULES } from "@/lib/indent";
+import { DrawingBlock } from "@/lib/drawing-block";
 import FileViewer from "@/components/FileViewer";
 
 type NoteMeta = { id: number; title: string; updatedAt: string };
@@ -276,6 +277,16 @@ function Toolbar({
         Clean up
       </button>
 
+      <button
+        onClick={() =>
+          editor.chain().focus().insertContent({ type: "drawingBlock", attrs: { data: "", height: 200 } }).run()
+        }
+        className={btn}
+        title="Insert a drawing box"
+      >
+        ✏ Draw
+      </button>
+
       <div className="flex items-center gap-1">
         <label className="text-xs text-zinc-500 dark:text-zinc-400 whitespace-nowrap">Width</label>
         <input
@@ -399,6 +410,7 @@ export default function NotebookPage() {
       TextStyle,
       FontSize,
       Indent,
+      DrawingBlock,
       Placeholder.configure({ placeholder: "Start writing…" }),
     ],
     content: "",
