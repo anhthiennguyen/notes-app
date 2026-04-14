@@ -12,7 +12,7 @@ type Stroke = { id: string; color: string; width: number; eraser: boolean; point
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const PRESET_COLORS = ["#ef4444", "#3b82f6", "#22c55e", "#f59e0b", "#000000"];
+const PRESET_COLORS = ["#000000"];
 const WIDTHS = [2, 4, 8, 16];
 const CANVAS_W = 1200; // fixed pixel width; CSS scales to 100%
 
@@ -77,7 +77,7 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
   const textInputRef = useRef<HTMLInputElement>(null);
 
   const [tool, setTool] = useState<"pen" | "eraser" | "text">("pen");
-  const [color, setColor] = useState("#ef4444");
+  const [color, setColor] = useState("#000000");
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [fontSize, setFontSize] = useState(20);
   const [active, setActive] = useState(false);
