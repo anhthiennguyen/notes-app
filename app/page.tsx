@@ -16,6 +16,7 @@ export default function Home() {
   const router = useRouter();
   const { dark, toggle: toggleTheme } = useTheme();
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
+  const [loading, setLoading] = useState(true);
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameVal, setRenameVal] = useState("");
   const [exportingId, setExportingId] = useState<number | null>(null);
@@ -33,9 +34,11 @@ export default function Home() {
 
 
   async function fetchNotebooks() {
+    setLoading(true);
     const res = await fetch("/api/notebooks");
     const data = await res.json();
     setNotebooks(Array.isArray(data) ? data : []);
+    setLoading(false);
   }
 
   async function createNotebook() {
@@ -150,7 +153,24 @@ export default function Home() {
 
       {/* Grid */}
       <main className="px-10 py-8">
-        {notebooks.length === 0 ? (
+        {loading ? (
+          <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))" }}>
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="relative flex flex-col" style={{ minHeight: "220px" }}>
+                {/* Spine */}
+                <div className="absolute left-0 top-2 bottom-2 w-3 rounded-l-sm bg-zinc-200 dark:bg-zinc-700 animate-pulse" />
+                {/* Cover */}
+                <div className="flex-1 ml-3 rounded-r-md rounded-tl-sm border border-zinc-200 dark:border-zinc-700 overflow-hidden flex flex-col">
+                  <div className="flex-1 bg-zinc-100 dark:bg-zinc-800 animate-pulse" style={{ minHeight: "140px" }} />
+                  <div className="px-3 py-2 bg-white dark:bg-zinc-800 border-t border-zinc-100 dark:border-zinc-700">
+                    <div className="h-3 bg-zinc-200 dark:bg-zinc-600 rounded animate-pulse w-3/4 mb-2" />
+                    <div className="h-2 bg-zinc-100 dark:bg-zinc-700 rounded animate-pulse w-1/2" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : notebooks.length === 0 ? (
           <div className="flex items-center justify-center h-64 text-zinc-400 dark:text-zinc-500 text-sm">
             No notebooks yet — create one to get started
           </div>
@@ -307,6 +327,7 @@ export default function Home() {
           </div>
         )}
       </main>
+
     </div>
   );
 }

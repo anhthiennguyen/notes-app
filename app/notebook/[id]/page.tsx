@@ -744,7 +744,7 @@ export default function NotebookPage() {
             />
           </>
         )}
-        <main className="flex-1 flex flex-col overflow-hidden">
+        <main className="flex-1 flex flex-col overflow-hidden relative">
         {activeNote ? (
           <>
             <div className="border-b border-zinc-200 dark:border-zinc-700 px-4 py-3 flex items-center gap-3">
@@ -821,36 +821,36 @@ export default function NotebookPage() {
               <TableOfContents headings={headings} onJump={jumpToHeading} />
             )}
 
-            <div className="flex-1 overflow-y-auto bg-zinc-100 dark:bg-zinc-950 py-8 relative">
+            <div className="flex-1 overflow-y-auto bg-zinc-100 dark:bg-zinc-950 py-8">
               <EditorContent
                 editor={editor}
                 style={{ maxWidth: `${maxWidth}rem`, zoom }}
                 className="mx-auto bg-white dark:bg-zinc-900 prose prose-zinc dark:prose-invert px-16 py-12 min-h-full focus:outline-none"
               />
-              {/* Zoom slider */}
-              <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm">
-                <button
-                  onClick={() => setZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
-                  className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
-                >−</button>
-                <input
-                  type="range"
-                  min={0.25} max={3} step={0.05}
-                  value={zoom}
-                  onChange={(e) => setZoom(+e.target.value)}
-                  className="w-24 accent-zinc-600 dark:accent-zinc-400 cursor-pointer"
-                />
-                <button
-                  onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))}
-                  className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
-                >+</button>
-                <span className="text-xs text-zinc-400 dark:text-zinc-500 w-8 text-right tabular-nums">{Math.round(zoom * 100)}%</span>
-                <button
-                  onClick={() => setZoom(1)}
-                  className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
-                  title="Reset zoom"
-                >↺</button>
-              </div>
+            </div>
+            {/* Zoom slider — outside scroll area so it stays fixed */}
+            <div className="absolute bottom-4 right-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm z-10">
+              <button
+                onClick={() => setZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
+                className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
+              >−</button>
+              <input
+                type="range"
+                min={0.25} max={3} step={0.05}
+                value={zoom}
+                onChange={(e) => setZoom(+e.target.value)}
+                className="w-24 accent-zinc-600 dark:accent-zinc-400 cursor-pointer"
+              />
+              <button
+                onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))}
+                className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
+              >+</button>
+              <span className="text-xs text-zinc-400 dark:text-zinc-500 w-8 text-right tabular-nums">{Math.round(zoom * 100)}%</span>
+              <button
+                onClick={() => setZoom(1)}
+                className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+                title="Reset zoom"
+              >↺</button>
             </div>
           </>
         ) : (

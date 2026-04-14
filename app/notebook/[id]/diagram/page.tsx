@@ -510,6 +510,19 @@ export default function DiagramPage() {
     return () => ro.disconnect();
   }, []);
 
+  // Scroll to zoom on diagram canvas
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.08 : 0.08;
+      setZoom((z) => Math.min(4, Math.max(0.1, +(z + delta).toFixed(3))));
+    }
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   // Dismiss context menu on outside click
   useEffect(() => {
     if (!contextMenu) return;
