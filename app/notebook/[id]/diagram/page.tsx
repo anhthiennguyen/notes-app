@@ -297,8 +297,8 @@ export default function DiagramPage() {
   const [kwDirty, setKwDirty] = useState(false);
   const [showBorders, setShowBorders] = useState(true);
   const showBordersRef = useRef(true);
-  const [isolatedKwId, setIsolatedKwId] = useState<string | null>(null);
-  const isolatedKwIdRef = useRef<string | null>(null);
+  const [isolatedKwIds, setIsolatedKwIds] = useState<Set<string>>(new Set());
+  const isolatedKwIdsRef = useRef<Set<string>>(new Set());
   const [newKw, setNewKw] = useState("");
   const [newKwColor, setNewKwColor] = useState("#f59e0b");
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -328,6 +328,7 @@ export default function DiagramPage() {
   const selStartRef = useRef<{ x: number; y: number } | null>(null);
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitPos, setSplitPos] = useState(50); // percent
+  const [splitSrc, setSplitSrc] = useState(`/notebook/${notebookId}`);
   const splitDraggingRef = useRef(false);
 
   const svgRef = useRef<SVGSVGElement>(null);
@@ -347,15 +348,15 @@ export default function DiagramPage() {
 
   function applyVisibility(canvas: d3.Selection<SVGGElement, unknown, null, undefined>) {
     const kws = customKeywordsRef.current;
-    const isoId = isolatedKwIdRef.current;
+    const isoIds = isolatedKwIdsRef.current;
     const showB = showBordersRef.current;
 
     // Bubbles
     canvas.selectAll<SVGGElement, Bubble>("g.bubble").attr("display", (d) => {
       const label = d.label.toLowerCase();
-      if (isoId) {
-        const kw = kws.find((k) => k.id === isoId);
-        return kw && label.includes(kw.text.toLowerCase()) ? null : "none";
+      if (isoIds.size > 0) {
+        const match = kws.some((k) => isoIds.has(k.id) && label.includes(k.text.toLowerCase()));
+        return match ? null : "none";
       }
       // If any visible keyword matches → show; if only hidden keywords match → hide; if no keyword matches → show
       const matchingKw = kws.find((k) => label.includes(k.text.toLowerCase()));
@@ -367,7 +368,7 @@ export default function DiagramPage() {
     canvas.selectAll<SVGPathElement, unknown>("path.kw-enc").attr("display", function() {
       if (!showB) return "none";
       const kwId = d3.select(this).attr("data-id");
-      if (isoId) return kwId === isoId ? null : "none";
+      if (isoIds.size > 0) return isoIds.has(kwId) ? null : "none";
       const kw = kws.find((k) => k.id === kwId);
       return kw?.hidden ? "none" : null;
     });
@@ -519,10 +520,10 @@ export default function DiagramPage() {
   }, [showBorders]);
 
   useEffect(() => {
-    isolatedKwIdRef.current = isolatedKwId;
+    isolatedKwIdsRef.current = isolatedKwIds;
     if (canvasRef.current) applyVisibility(canvasRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isolatedKwId]);
+  }, [isolatedKwIds]);
 
   useEffect(() => {
     fetch(`/api/notes?notebookId=${notebookId}`).then((r) => r.json()).then((d) => setNotes(Array.isArray(d) ? d : []));
@@ -880,7 +881,7 @@ export default function DiagramPage() {
         <>
           <div style={{ width: `${splitPos}%` }} className="h-full shrink-0 overflow-hidden">
             <iframe
-              src={`/notebook/${notebookId}`}
+              src={splitSrc}
               className="w-full h-full border-0"
               title="Notes"
             />
@@ -1086,7 +1087,7 @@ export default function DiagramPage() {
                     <button onClick={() => { setCustomKeywords((prev) => prev.map((k) => k.id === kw.id ? { ...k, hidden: !k.hidden } : k)); setKwDirty(true); }} className={`transition-colors ${kw.hidden ? "text-zinc-300 dark:text-zinc-600" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`} title={kw.hidden ? "Show" : "Hide"}>
                       {kw.hidden ? <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 2l12 12M6.5 6.6A2 2 0 0 0 9.4 9.5" /><path d="M8 4C4.5 4 2 8 2 8s.8 1.4 2.3 2.7M10.6 10.6C9.6 11.4 8.8 12 8 12c-3.5 0-6-4-6-4" /><path d="M14 8s-.7 1.2-2 2.4" /></svg> : <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M1 8s2.5-5 7-5 7 5 7 5-2.5 5-7 5-7-5-7-5z" /><circle cx="8" cy="8" r="2" /></svg>}
                     </button>
-                    <button onClick={() => setIsolatedKwId((prev) => prev === kw.id ? null : kw.id)} className={`transition-colors ${isolatedKwId === kw.id ? "text-amber-500" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`} title={isolatedKwId === kw.id ? "Exit isolate" : "Isolate"}>
+                    <button onClick={() => setIsolatedKwIds((prev) => { const next = new Set(prev); next.has(kw.id) ? next.delete(kw.id) : next.add(kw.id); return next; })} className={`transition-colors ${isolatedKwIds.has(kw.id) ? "text-amber-500" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`} title={isolatedKwIds.has(kw.id) ? "Exit isolate" : "Isolate"}>
                       <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="8" cy="8" r="3" /><line x1="8" y1="1" x2="8" y2="4" /><line x1="8" y1="12" x2="8" y2="15" /><line x1="1" y1="8" x2="4" y2="8" /><line x1="12" y1="8" x2="15" y2="8" /></svg>
                     </button>
                     <button onClick={() => { setCustomKeywords((prev) => prev.map((k) => k.id === kw.id ? { ...k, color: randomColor() } : k)); setKwDirty(true); }} className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors" title="Random color">
@@ -1487,7 +1488,10 @@ export default function DiagramPage() {
           <button
             onClick={() => {
               const noteId = activeNote?.id;
-              if (noteId) window.location.href = `/notebook/${notebookId}?note=${noteId}&scroll=${encodeURIComponent(contextMenu.bubble.label)}`;
+              if (noteId) {
+                setSplitSrc(`/notebook/${notebookId}?note=${noteId}&scroll=${encodeURIComponent(contextMenu.bubble.label)}`);
+                setSplitOpen(true);
+              }
               setContextMenu(null);
             }}
             className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200 transition-colors"
