@@ -317,6 +317,7 @@ export default function DiagramPage() {
   const [dragOverCatId, setDragOverCatId] = useState<string | null>(null);
   const [dragCatId, setDragCatId] = useState<string | null>(null);
   const [dragOverCatBeforeId, setDragOverCatBeforeId] = useState<string | null>(null);
+  const [dragOverCatNestId, setDragOverCatNestId] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<{ word: string; count: number }[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedKwIds, setSelectedKwIds] = useState<Set<string>>(new Set());
@@ -1167,20 +1168,24 @@ export default function DiagramPage() {
                   )}
                   {/* Category header */}
                   <div
-                    className={`flex items-center gap-1 mb-0.5 rounded px-1 py-0.5 transition-colors ${dragOverCatId === cat.id ? "bg-zinc-100 dark:bg-zinc-700" : ""}`}
+                    className={`flex items-center gap-1 mb-0.5 rounded px-1 py-0.5 transition-colors ${dragOverCatId === cat.id ? "bg-zinc-100 dark:bg-zinc-700" : dragOverCatNestId === cat.id ? "bg-blue-100 dark:bg-blue-900/40 ring-1 ring-blue-400" : ""}`}
                     draggable
-                    onDragStart={(e) => { e.stopPropagation(); setDragCatId(cat.id); setDragOverCatBeforeId(null); }}
-                    onDragEnd={() => { setDragCatId(null); setDragOverCatBeforeId(null); setDragOverCatId(null); }}
+                    onDragStart={(e) => { e.stopPropagation(); setDragCatId(cat.id); setDragOverCatBeforeId(null); setDragOverCatNestId(null); }}
+                    onDragEnd={() => { setDragCatId(null); setDragOverCatBeforeId(null); setDragOverCatNestId(null); setDragOverCatId(null); }}
                     onDragOver={(e) => {
                       e.preventDefault(); e.stopPropagation();
                       if (dragKwId) { setDragOverCatId(cat.id); return; }
                       if (dragCatId && dragCatId !== cat.id) {
                         const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                        if (e.clientY < rect.top + rect.height / 2) setDragOverCatBeforeId(cat.id);
-                        else setDragOverCatBeforeId(null);
+                        const third = rect.height / 3;
+                        if (e.clientY < rect.top + third) {
+                          setDragOverCatBeforeId(cat.id); setDragOverCatNestId(null);
+                        } else {
+                          setDragOverCatNestId(cat.id); setDragOverCatBeforeId(null);
+                        }
                       }
                     }}
-                    onDragLeave={() => { setDragOverCatId(null); setDragOverCatBeforeId(null); }}
+                    onDragLeave={() => { setDragOverCatId(null); setDragOverCatBeforeId(null); setDragOverCatNestId(null); }}
                     onDrop={(e) => {
                       e.stopPropagation();
                       if (dragKwId) {
@@ -1188,7 +1193,24 @@ export default function DiagramPage() {
                         setKwDirty(true); setDragKwId(null); setDragOverCatId(null); return;
                       }
                       if (dragCatId && dragCatId !== cat.id) {
-                        reorderCat(dragCatId, cat.id);
+                        if (dragOverCatNestId === cat.id) {
+                          // Nest dragged inside this category
+                          setCategories((prev) => {
+                            const dragged = prev.find((c) => c.id === dragCatId);
+                            if (!dragged) return prev;
+                            function isDesc(id: string | null): boolean {
+                              if (!id) return false;
+                              if (id === dragCatId) return true;
+                              return isDesc(prev.find((c) => c.id === id)?.parentId ?? null);
+                            }
+                            if (isDesc(cat.id)) return prev; // would be circular
+                            const siblings = prev.filter((c) => c.parentId === cat.id && c.id !== dragCatId);
+                            return prev.map((c) => c.id === dragCatId ? { ...c, parentId: cat.id, order: siblings.length } : c);
+                          });
+                          setKwDirty(true); setDragCatId(null); setDragOverCatNestId(null);
+                        } else {
+                          reorderCat(dragCatId, cat.id);
+                        }
                       }
                     }}
                   >
