@@ -104,7 +104,8 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
     renderAll();
     const canvas = canvasRef.current;
     if (!canvas) return;
-    updateAttributes({ data: canvas.toDataURL("image/png") });
+    const dataUrl = canvas.toDataURL("image/png");
+    setTimeout(() => updateAttributes({ data: dataUrl }), 0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStrokes]);
 
@@ -160,7 +161,10 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
       sessionStrokesRef.current = next;
       renderAll();
       const canvas = canvasRef.current;
-      if (canvas) updateAttributes({ data: canvas.toDataURL("image/png") });
+      if (canvas) {
+        const dataUrl = canvas.toDataURL("image/png");
+        setTimeout(() => updateAttributes({ data: dataUrl }), 0);
+      }
       return next;
     });
   }
