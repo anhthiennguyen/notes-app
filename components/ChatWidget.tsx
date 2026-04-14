@@ -98,7 +98,7 @@ export default function ChatWidget() {
           {/* Header */}
           <div className="px-4 py-3 border-b border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
             <span className="text-sm font-semibold dark:text-zinc-100">Ask anything</span>
-            <span className="text-xs text-zinc-400">llama3.2</span>
+            <span className="text-xs text-zinc-400">llama 3.3 70b</span>
           </div>
 
           {/* Messages */}
