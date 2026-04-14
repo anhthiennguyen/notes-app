@@ -10,7 +10,7 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
 import { FoldableHeading } from "@/lib/foldable-heading";
 import { Indent, CLEANUP_RULES } from "@/lib/indent";
-import PptxViewer from "./PptxViewer";
+import FileViewer from "@/components/FileViewer";
 
 type NoteMeta = { id: number; title: string; updatedAt: string };
 type Note = NoteMeta & { content: string; maxWidth?: number | null };
@@ -719,7 +719,7 @@ export default function NotebookPage() {
         {fileViewerOpen && (
           <>
             <div style={{ width: `${fileViewerPos}%` }} className="h-full shrink-0 overflow-hidden">
-              <PptxViewer onClose={() => setFileViewerOpen(false)} />
+              <FileViewer onClose={() => setFileViewerOpen(false)} />
             </div>
             <div
               className="w-1 bg-zinc-200 dark:bg-zinc-700 hover:bg-blue-400 cursor-col-resize shrink-0 transition-colors"
