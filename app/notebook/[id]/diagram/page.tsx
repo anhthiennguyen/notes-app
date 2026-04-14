@@ -1193,26 +1193,6 @@ export default function DiagramPage() {
                           setDragOverCat(null);
                         }}
                       >
-                        {/* Category color swatch — reads/writes catColor, never touches kw.color */}
-                        {(() => {
-                          const catColor = kws[0]?.catColor ?? "#888888";
-                          return (
-                            <label className="relative w-3 h-3 shrink-0 cursor-pointer">
-                              <span className="block w-3 h-3 rounded-full border-2" style={{ borderColor: catColor, backgroundColor: catColor + "33" }} />
-                              <input
-                                type="color"
-                                value={catColor}
-                                onChange={(e) => {
-                                  const c = e.target.value;
-                                  setCustomKeywords((prev) => prev.map((k) => k.category === cat ? { ...k, catColor: c } : k));
-                                  setKwDirty(true);
-                                }}
-                                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                                title="Category color"
-                              />
-                            </label>
-                          );
-                        })()}
                         {editingCat === cat ? (
                           <>
                             <input
@@ -1242,17 +1222,6 @@ export default function DiagramPage() {
                             title="Click to rename"
                           >{cat}</span>
                         )}
-                        <button
-                          onClick={() => {
-                            const catColor = randomColor();
-                            setCustomKeywords((prev) => prev.map((k) => k.category === cat ? { ...k, catColor } : k));
-                            setKwDirty(true);
-                          }}
-                          className="text-zinc-300 hover:text-zinc-700 dark:text-zinc-600 dark:hover:text-zinc-200 transition-colors"
-                          title="Random category color"
-                        >
-                          <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2 4h2l8 8h2M12 4h2M2 12h2" /><polyline points="10 4 12 4 12 6" /><polyline points="4 12 2 12 2 10" /></svg>
-                        </button>
                         <button
                           onClick={() => { setExtraCats((prev) => prev.filter((c) => c !== cat)); setCustomKeywords((prev) => prev.map((k) => k.category === cat ? { ...k, category: null } : k)); setKwDirty(true); }}
                           className="text-zinc-300 hover:text-red-400 dark:text-zinc-600 dark:hover:text-red-400 text-xs transition-colors"
