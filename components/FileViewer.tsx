@@ -10,10 +10,11 @@ interface Props {
 }
 
 export default function FileViewer({ onClose }: Props) {
-  const [mode, setMode] = useState<"none" | "pptx" | "pdf">("none");
+  const [mode, setMode] = useState<"none" | "pptx" | "pdf" | "docx">("none");
   const [slides, setSlides] = useState<SlideData[]>([]);
   const [aspectRatio, setAspectRatio] = useState(4 / 3);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [docxHtml, setDocxHtml] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [activeSlide, setActiveSlide] = useState(0);
@@ -27,12 +28,27 @@ export default function FileViewer({ onClose }: Props) {
   async function handleFile(file: File) {
     setLoading(true);
     setFileName(file.name);
+    const ext = file.name.toLowerCase().split(".").pop();
 
-    if (file.name.toLowerCase().endsWith(".pdf")) {
+    if (ext === "pdf") {
       if (pdfUrl) URL.revokeObjectURL(pdfUrl);
       setPdfUrl(URL.createObjectURL(file));
       setMode("pdf");
       setSlides([]);
+      setDocxHtml(null);
+      setLoading(false);
+      return;
+    }
+
+    if (ext === "docx") {
+      const arrayBuffer = await file.arrayBuffer();
+      const mammoth = (await import("mammoth")).default;
+      const result = await mammoth.convertToHtml({ arrayBuffer });
+      setDocxHtml(result.value);
+      setMode("docx");
+      setSlides([]);
+      if (pdfUrl) URL.revokeObjectURL(pdfUrl);
+      setPdfUrl(null);
       setLoading(false);
       return;
     }
@@ -47,6 +63,7 @@ export default function FileViewer({ onClose }: Props) {
       setAspectRatio(data.aspectRatio ?? 4 / 3);
       setActiveSlide(0);
       setMode("pptx");
+      setDocxHtml(null);
     }
     setLoading(false);
   }
@@ -74,7 +91,7 @@ export default function FileViewer({ onClose }: Props) {
         <input
           ref={inputRef}
           type="file"
-          accept=".pptx,.pdf"
+          accept=".pptx,.pdf,.docx"
           className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
         />
@@ -95,7 +112,7 @@ export default function FileViewer({ onClose }: Props) {
             <rect x="1" y="1" width="14" height="14" rx="2"/>
             <path d="M5 8h6M8 5v6"/>
           </svg>
-          <p className="text-sm">Click to open a .pptx or .pdf</p>
+          <p className="text-sm">Click to open a .pptx, .pdf, or .docx</p>
         </div>
       )}
 
@@ -105,6 +122,15 @@ export default function FileViewer({ onClose }: Props) {
           className="flex-1 w-full border-0"
           title={fileName ?? "PDF"}
         />
+      )}
+
+      {!loading && mode === "docx" && docxHtml !== null && (
+        <div className="flex-1 overflow-auto bg-white dark:bg-zinc-900 p-6">
+          <div
+            className="max-w-3xl mx-auto prose prose-sm dark:prose-invert prose-zinc"
+            dangerouslySetInnerHTML={{ __html: docxHtml }}
+          />
+        </div>
       )}
 
       {!loading && mode === "pptx" && slides.length > 0 && (
