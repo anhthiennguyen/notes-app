@@ -14,7 +14,7 @@ import { DrawingBlock } from "@/lib/drawing-block";
 import FileViewer from "@/components/FileViewer";
 
 type NoteMeta = { id: number; title: string; updatedAt: string };
-type Note = NoteMeta & { content: string; maxWidth?: number | null };
+type Note = NoteMeta & { content: string; maxWidth?: number | null; titleSetManually: boolean };
 type HeadingEntry = { level: number; text: string; pos: number };
 
 // ── Heading dropdown ────────────────────────────────────────────────────────
@@ -388,6 +388,7 @@ export default function NotebookPage() {
   const [fileViewerPos, setFileViewerPos] = useState(40);
   const fileViewerDraggingRef = useRef(false);
   const exportRef = useRef<HTMLDivElement>(null);
+  const titleIsManualRef = useRef(false);
 
   const extractHeadings = useCallback(
     (ed: NonNullable<ReturnType<typeof useEditor>>) => {
@@ -419,6 +420,10 @@ export default function NotebookPage() {
       setDirty(true);
       extractHeadings(editor);
       syncToolbarState(editor);
+      if (!titleIsManualRef.current) {
+        const firstLine = editor.state.doc.firstChild?.textContent.trim() ?? "";
+        setTitle(firstLine || "Untitled");
+      }
     },
     onSelectionUpdate({ editor }) {
       syncToolbarState(editor);
@@ -547,6 +552,7 @@ export default function NotebookPage() {
   async function openNote(id: number) {
     const res = await fetch(`/api/notes/${id}`);
     const note: Note = await res.json();
+    titleIsManualRef.current = note.titleSetManually;
     setActiveNote(note);
     setTitle(note.title);
     setMaxWidth(note.maxWidth ?? 56);
@@ -562,13 +568,14 @@ export default function NotebookPage() {
       body: JSON.stringify({ notebookId }),
     });
     const note: Note = await res.json();
+    titleIsManualRef.current = false;
     await fetchNotes();
     openNote(note.id);
   }
 
   async function save() {
     if (!activeNote || !editor) return;
-    const data = { title, content: editor.getHTML() };
+    const data = { title, content: editor.getHTML(), titleSetManually: titleIsManualRef.current };
     await fetch(`/api/notes/${activeNote.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -585,6 +592,7 @@ export default function NotebookPage() {
   }
 
   function handleTitleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    titleIsManualRef.current = true;
     setTitle(e.target.value);
     setDirty(true);
   }
@@ -592,10 +600,11 @@ export default function NotebookPage() {
   async function commitRename(id: number) {
     const newTitle = renameVal.trim() || "Untitled";
     setRenamingNoteId(null);
+    if (activeNote?.id === id) titleIsManualRef.current = true;
     await fetch(`/api/notes/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: newTitle }),
+      body: JSON.stringify({ title: newTitle, titleSetManually: true }),
     });
     setNotes((prev) => prev.map((n) => n.id === id ? { ...n, title: newTitle } : n));
     if (activeNote?.id === id) setTitle(newTitle);

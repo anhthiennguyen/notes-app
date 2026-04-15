@@ -21,6 +21,7 @@ export async function PATCH(
     where: { id: Number(id) },
     data: {
       ...(body.title !== undefined && { title: body.title }),
+      ...(body.titleSetManually !== undefined && { titleSetManually: body.titleSetManually }),
       ...(body.content !== undefined && { content: body.content }),
       ...(body.maxWidth !== undefined && { maxWidth: body.maxWidth }),
       ...(body.drawingData !== undefined && { drawingData: body.drawingData }),
