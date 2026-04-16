@@ -19,23 +19,37 @@ type ContextMenu = { x: number; y: number; item: QuizItem };
 function parseQuizItems(html: string): QuizItem[] {
   if (typeof window === "undefined") return [];
   const doc = new DOMParser().parseFromString(html, "text/html");
+  const children = [...doc.body.childNodes].filter((n) => n.nodeType === 1) as Element[];
   const items: QuizItem[] = [];
   let idx = 0;
-  doc.body.childNodes.forEach((n) => {
-    if (n.nodeType !== 1) return;
-    const el = n as Element;
+  let i = 0;
+  while (i < children.length) {
+    const el = children[i];
     const boldEls = [...el.querySelectorAll("strong, b")];
-    if (boldEls.length === 0) return;
+    if (boldEls.length === 0) { i++; continue; }
+
     const question = boldEls.map((b) => b.textContent ?? "").join(" ").trim();
+    if (!question) { i++; continue; }
+
+    // Non-bold text within the same paragraph
     const boldSet = new Set(boldEls);
-    const answer = [...el.childNodes]
+    const inline = [...el.childNodes]
       .filter((c) => !boldSet.has(c as Element))
       .map((c) => c.textContent ?? "")
       .join("")
       .trim();
-    if (!question) return;
+
+    // Next sibling paragraph if it has no bold
+    const next = children[i + 1];
+    const nextText = next && next.querySelectorAll("strong, b").length === 0
+      ? next.textContent?.trim() ?? ""
+      : "";
+
+    const answer = inline || nextText;
     items.push({ id: `q${idx++}`, question, answer });
-  });
+    // Skip next paragraph if we consumed it as the answer
+    i += nextText ? 2 : 1;
+  }
   return items;
 }
 
