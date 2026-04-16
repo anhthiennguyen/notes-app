@@ -326,6 +326,7 @@ export default function DiagramPage() {
   const toolRef = useRef<"hand" | "select">("hand");
   const [selRect, setSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const selStartRef = useRef<{ x: number; y: number } | null>(null);
+  const [allNotesMode, setAllNotesMode] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitPos, setSplitPos] = useState(50); // percent
   const [splitSrc, setSplitSrc] = useState(`/notebook/${notebookId}`);
@@ -588,6 +589,39 @@ export default function DiagramPage() {
     });
     setBubbles(newBubbles);
   }, [size.w, size.h]);
+
+  const loadAllNotes = useCallback(async () => {
+    const res = await fetch(`/api/notes?notebookId=${notebookId}`);
+    const metas: NoteMeta[] = await res.json();
+    const allContents = await Promise.all(
+      metas.map((m) => fetch(`/api/notes/${m.id}`).then((r) => r.json() as Promise<Note>))
+    );
+    const seen = new Set<string>();
+    const combined: RawItem[] = [];
+    let idx = 0;
+    allContents.forEach((note) => {
+      parseNoteHtml(note.content).forEach((item) => {
+        const key = item.label.toLowerCase().trim();
+        if (!seen.has(key)) { seen.add(key); combined.push({ ...item, id: `n${idx++}` }); }
+      });
+    });
+    const clusters = buildKeywordClusters(combined);
+    const defaultColor = (i: number) => PALETTE[clusters[i] % PALETTE.length];
+    const newBubbles = combined.map((item, i) => {
+      const kw = customKeywordsRef.current.find((k) =>
+        item.label.toLowerCase().includes(k.text.toLowerCase())
+      );
+      const color = kw ? kw.color : defaultColor(i);
+      return {
+        id: item.id, label: item.label, nodeType: item.nodeType,
+        cluster: clusters[i], radius: RADIUS[item.nodeType] ?? 36,
+        color, borderColor: color,
+        x: size.w / 2 + (Math.random() - 0.5) * 200,
+        y: size.h / 2 + (Math.random() - 0.5) * 200,
+      };
+    });
+    setBubbles(newBubbles);
+  }, [notebookId, size.w, size.h]);
 
   function randomColor() {
     const usedColors = new Set(customKeywords.map((k) => k.color.toLowerCase()));
@@ -962,9 +996,9 @@ export default function DiagramPage() {
                 <rect x="2" y="2" width="12" height="12" rx="3" />
               </svg>
             </button>
-            {activeNote && (
+            {(activeNote || allNotesMode) && (
               <button
-                onClick={() => loadNote(activeNote.id)}
+                onClick={() => allNotesMode ? loadAllNotes() : loadNote(activeNote!.id)}
                 className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
                 title="Refresh diagram"
               >
@@ -974,14 +1008,33 @@ export default function DiagramPage() {
           </div>
         </div>
 
+        {/* All notes toggle */}
+        <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+          <button
+            onClick={() => {
+              const next = !allNotesMode;
+              setAllNotesMode(next);
+              if (next) loadAllNotes();
+              else { setActiveNote(null); setBubbles([]); }
+            }}
+            className={`w-full text-xs rounded px-2 py-1.5 transition-colors border ${
+              allNotesMode
+                ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100"
+                : "border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200"
+            }`}
+          >
+            {allNotesMode ? "All notes combined" : "All notes"}
+          </button>
+        </div>
+
         {/* Notes list */}
         <ul className="overflow-y-auto border-b border-zinc-200 dark:border-zinc-700" style={{ maxHeight: "35%" }}>
           {notes.map((note) => (
             <li
               key={note.id}
-              onClick={() => loadNote(note.id)}
+              onClick={() => { setAllNotesMode(false); loadNote(note.id); }}
               className={`px-3 py-2 text-sm cursor-pointer truncate ${
-                activeNote?.id === note.id
+                !allNotesMode && activeNote?.id === note.id
                   ? "bg-zinc-200 dark:bg-zinc-700 font-medium"
                   : "hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300"
               }`}
@@ -1326,7 +1379,7 @@ export default function DiagramPage() {
 
       {/* Canvas */}
       <main ref={containerRef} className="flex-1 relative overflow-hidden bg-zinc-100 dark:bg-zinc-900">
-        {activeNote ? (
+        {(activeNote || allNotesMode) ? (
           <svg ref={svgRef} width={size.w} height={size.h} className="w-full h-full" />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500 gap-2">
