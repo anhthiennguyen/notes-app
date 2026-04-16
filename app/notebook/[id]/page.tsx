@@ -672,6 +672,13 @@ export default function NotebookPage() {
           >
             ⬡
           </Link>
+          <Link
+            href={`/notebook/${notebookId}/quiz`}
+            className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors text-center dark:text-zinc-300"
+            title="Open quiz view"
+          >
+            ?
+          </Link>
           <button
             onClick={() => setFileViewerOpen((v) => !v)}
             className={`text-sm border rounded px-3 py-1.5 transition-colors text-center ${fileViewerOpen ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100" : "border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-300"}`}

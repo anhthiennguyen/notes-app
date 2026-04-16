@@ -926,6 +926,7 @@ export default function DiagramPage() {
               >
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><line x1="8" y1="2" x2="8" y2="14"/><rect x="1" y="2" width="14" height="12" rx="2"/></svg>
               </button>
+              <Link href={`/notebook/${notebookId}/quiz`} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">Quiz</Link>
               <Link href={`/notebook/${notebookId}`} className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors">← Notes</Link>
             </div>
           </div>
