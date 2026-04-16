@@ -39,16 +39,17 @@ function parseQuizItems(html: string): QuizItem[] {
       .join("")
       .trim();
 
-    // Next sibling paragraph if it has no bold
-    const next = children[i + 1];
-    const nextText = next && next.querySelectorAll("strong, b").length === 0
-      ? next.textContent?.trim() ?? ""
-      : "";
-
-    const answer = inline || nextText;
+    // Collect all following non-bold paragraphs as the answer
+    const answerLines: string[] = [];
+    let j = i + 1;
+    while (j < children.length && children[j].querySelectorAll("strong, b").length === 0) {
+      const t = children[j].textContent?.trim() ?? "";
+      if (t) answerLines.push(t);
+      j++;
+    }
+    const answer = inline || answerLines.join("\n");
     items.push({ id: `q${idx++}`, question, answer });
-    // Skip next paragraph if we consumed it as the answer
-    i += nextText ? 2 : 1;
+    i = answerLines.length > 0 ? j : i + 1;
   }
   return items;
 }
@@ -205,7 +206,7 @@ export default function QuizPage() {
                     {revealed[item.id] ? "Hide answer" : "Show answer"}
                   </button>
                   {revealed[item.id] && (
-                    <p className="mt-3 text-sm text-zinc-700 dark:text-zinc-300 border-l-2 border-zinc-300 dark:border-zinc-600 pl-3">
+                    <p className="mt-3 text-sm text-zinc-700 dark:text-zinc-300 border-l-2 border-zinc-300 dark:border-zinc-600 pl-3 whitespace-pre-wrap">
                       {item.answer}
                     </p>
                   )}
