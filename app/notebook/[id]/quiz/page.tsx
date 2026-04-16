@@ -14,6 +14,8 @@ type QuizItem = {
   answer: string;
 };
 
+type ContextMenu = { x: number; y: number; item: QuizItem };
+
 function parseQuizItems(html: string): QuizItem[] {
   if (typeof window === "undefined") return [];
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -42,12 +44,23 @@ export default function QuizPage() {
   const [items, setItems] = useState<QuizItem[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
 
   useEffect(() => {
     fetch(`/api/notes?notebookId=${notebookId}`)
       .then((r) => r.json())
       .then((d) => setNotes(Array.isArray(d) ? d : []));
   }, [notebookId]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    function dismiss(e: MouseEvent) {
+      if ((e.target as Element)?.closest(".ctx-menu")) return;
+      setContextMenu(null);
+    }
+    document.addEventListener("mousedown", dismiss);
+    return () => document.removeEventListener("mousedown", dismiss);
+  }, [contextMenu]);
 
   const loadNote = useCallback(async (id: number) => {
     const res = await fetch(`/api/notes/${id}`);
@@ -147,6 +160,10 @@ export default function QuizPage() {
               <div
                 key={item.id}
                 className="border border-zinc-200 dark:border-zinc-700 rounded-xl p-5 flex flex-col gap-3"
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  setContextMenu({ x: e.clientX, y: e.clientY, item });
+                }}
               >
                 <p className="text-xs text-zinc-400 dark:text-zinc-500 font-medium uppercase tracking-wide">
                   {i + 1} / {items.length}
@@ -179,6 +196,29 @@ export default function QuizPage() {
           </div>
         )}
       </main>
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="ctx-menu fixed z-50 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-lg shadow-xl py-1 min-w-44"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <div className="px-3 py-1.5 text-xs font-semibold text-zinc-500 dark:text-zinc-400 border-b border-zinc-100 dark:border-zinc-700 max-w-72 break-words">
+            {contextMenu.item.question}
+          </div>
+          <button
+            onClick={() => {
+              if (activeNote) {
+                window.location.href = `/notebook/${notebookId}?note=${activeNote.id}&scroll=${encodeURIComponent(contextMenu.item.question)}`;
+              }
+              setContextMenu(null);
+            }}
+            className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200 transition-colors"
+          >
+            Open in Notes →
+          </button>
+        </div>
+      )}
     </div>
   );
 }
