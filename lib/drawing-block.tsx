@@ -137,6 +137,9 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
   const [textValue, setTextValue] = useState("");
 
   const height: number = node.attrs.height ?? 200;
+  const isResizingRef = useRef(false);
+  const resizeStartYRef = useRef(0);
+  const resizeStartHRef = useRef(0);
 
   // ── History helpers ───────────────────────────────────────────────────────
 
@@ -333,6 +336,37 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
     setTextValue("");
   }
 
+  // ── Resize ───────────────────────────────────────────────────────────────
+
+  function onResizeMouseDown(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    isResizingRef.current = true;
+    resizeStartYRef.current = e.clientY;
+    resizeStartHRef.current = height;
+
+    function onMove(ev: MouseEvent) {
+      if (!isResizingRef.current) return;
+      const newH = Math.max(80, resizeStartHRef.current + (ev.clientY - resizeStartYRef.current));
+      const canvas = canvasRef.current;
+      if (!canvas) { updateAttributes({ height: newH }); return; }
+      // Preserve drawing across resize
+      const dataUrl = canvas.toDataURL("image/png");
+      canvas.height = newH;
+      loadImage(canvas, dataUrl).then(() => saveCommitted());
+      updateAttributes({ height: newH });
+    }
+
+    function onUp() {
+      isResizingRef.current = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
   // ── Clear ─────────────────────────────────────────────────────────────────
 
   function clearAll() {
@@ -452,7 +486,7 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
         )}
 
         {/* Canvas + text input overlay */}
-        <div className="relative">
+        <div className="relative" style={{ userSelect: "none" }}>
           <canvas
             ref={canvasRef}
             height={height}
@@ -490,6 +524,15 @@ function DrawingBlockView({ node, updateAttributes, selected }: NodeViewProps) {
               }}
             />
           )}
+        </div>
+
+        {/* Resize handle */}
+        <div
+          onMouseDown={onResizeMouseDown}
+          className="flex items-center justify-center h-3 cursor-ns-resize bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors rounded-b"
+          title="Drag to resize"
+        >
+          <div className="w-8 h-0.5 rounded-full bg-zinc-300 dark:bg-zinc-600" />
         </div>
       </div>
     </NodeViewWrapper>
