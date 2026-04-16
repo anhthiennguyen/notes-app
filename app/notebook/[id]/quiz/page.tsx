@@ -27,7 +27,12 @@ function parseQuizItems(html: string): QuizItem[] {
     const boldEls = [...el.querySelectorAll("strong, b")];
     if (boldEls.length === 0) return;
     const question = boldEls.map((b) => b.textContent ?? "").join(" ").trim();
-    const answer = el.textContent?.trim() ?? "";
+    const boldSet = new Set(boldEls);
+    const answer = [...el.childNodes]
+      .filter((c) => !boldSet.has(c as Element))
+      .map((c) => c.textContent ?? "")
+      .join("")
+      .trim();
     if (!question) return;
     items.push({ id: `q${idx++}`, question, answer });
   });
