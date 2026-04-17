@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTheme } from "@/lib/theme";
@@ -65,6 +65,10 @@ export default function QuizPage() {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [revealed, setRevealed] = useState<Record<string, boolean>>({});
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitPos, setSplitPos] = useState(50);
+  const [splitSrc, setSplitSrc] = useState(`/notebook/${notebookId}`);
+  const splitDraggingRef = useRef(false);
 
   useEffect(() => {
     fetch(`/api/notes?notebookId=${notebookId}`)
@@ -108,6 +112,32 @@ export default function QuizPage() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 font-sans">
+      {/* Split notes panel */}
+      {splitOpen && (
+        <>
+          <div style={{ width: `${splitPos}%` }} className="h-full shrink-0 overflow-hidden">
+            <iframe src={splitSrc} className="w-full h-full border-0" title="Notes" />
+          </div>
+          <div
+            className="w-1 bg-zinc-300 dark:bg-zinc-600 hover:bg-blue-400 dark:hover:bg-blue-500 cursor-col-resize shrink-0 transition-colors"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              splitDraggingRef.current = true;
+              const onMove = (ev: MouseEvent) => {
+                if (!splitDraggingRef.current) return;
+                setSplitPos(Math.max(20, Math.min(80, (ev.clientX / window.innerWidth) * 100)));
+              };
+              const onUp = () => {
+                splitDraggingRef.current = false;
+                window.removeEventListener("mousemove", onMove);
+                window.removeEventListener("mouseup", onUp);
+              };
+              window.addEventListener("mousemove", onMove);
+              window.addEventListener("mouseup", onUp);
+            }}
+          />
+        </>
+      )}
       {/* Sidebar */}
       <aside className="w-56 flex flex-col border-r border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-800 shrink-0">
         <div className="p-3 border-b border-zinc-200 dark:border-zinc-700 flex flex-col gap-2">
@@ -229,7 +259,8 @@ export default function QuizPage() {
           <button
             onClick={() => {
               if (activeNote) {
-                window.location.href = `/notebook/${notebookId}?note=${activeNote.id}&scroll=${encodeURIComponent(contextMenu.item.question)}`;
+                setSplitSrc(`/notebook/${notebookId}?note=${activeNote.id}&scroll=${encodeURIComponent(contextMenu.item.question)}`);
+                setSplitOpen(true);
               }
               setContextMenu(null);
             }}
