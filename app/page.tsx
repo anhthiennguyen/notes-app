@@ -105,6 +105,24 @@ export default function Home() {
     }
   }
 
+  async function downloadKeywords(id: number, name: string) {
+    try {
+      const res = await fetch(`/api/diagram-keywords?notebookId=${id}`);
+      const keywords = await res.json();
+      const blob = new Blob([JSON.stringify(keywords, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `keywords-notebook-${id}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Keywords export error: " + err);
+    }
+  }
+
   async function removeCover(id: number) {
     await fetch(`/api/notebooks/${id}`, {
       method: "PATCH",
@@ -288,6 +306,14 @@ export default function Home() {
                           title="Export all as Word"
                         >
                           DOCX
+                        </button>
+                        <span className="text-zinc-300 dark:text-zinc-600 text-xs">·</span>
+                        <button
+                          onClick={() => downloadKeywords(nb.id, nb.name)}
+                          className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors"
+                          title="Download keywords as JSON"
+                        >
+                          KW
                         </button>
                       </div>
                     </div>
