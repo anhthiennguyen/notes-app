@@ -11,6 +11,7 @@ import { TextStyle, FontSize } from "@tiptap/extension-text-style";
 import { FoldableHeading } from "@/lib/foldable-heading";
 import { Indent, CLEANUP_RULES } from "@/lib/indent";
 import { DrawingBlock } from "@/lib/drawing-block";
+import { CustomCodeBlock } from "@/lib/code-block";
 import FileViewer from "@/components/FileViewer";
 
 type NoteMeta = { id: number; title: string; updatedAt: string };
@@ -221,6 +222,14 @@ function Toolbar({
       </button>
 
       <button
+        onClick={() => (editor.chain().focus() as any).toggleCodeBlock().run()}
+        className={btn}
+        title="Insert code block"
+      >
+        {"</>"}
+      </button>
+
+      <button
         onClick={() =>
           editor.chain().focus().insertContent({ type: "drawingBlock", attrs: { data: "", height: 200 } }).run()
         }
@@ -425,7 +434,8 @@ export default function NotebookPage() {
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
-      StarterKit.configure({ heading: false }),
+      StarterKit.configure({ heading: false, codeBlock: false }),
+      CustomCodeBlock,
       FoldableHeading,
       TextStyle,
       FontSize,
