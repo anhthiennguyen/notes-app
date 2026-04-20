@@ -53,6 +53,7 @@ function Toolbar({
   onToggleToc: () => void;
 }) {
   const [paraSpacingOpen, setParaSpacingOpen] = useState(false);
+  const [formatOpen, setFormatOpen] = useState(false);
   const paraSpacingRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -94,79 +95,21 @@ function Toolbar({
   const btn = "px-3 py-1 rounded border border-zinc-300 dark:border-zinc-600 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-200";
 
   return (
-    <div className="flex items-center gap-3 px-8 py-2 border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-sm">
-      <select value={activeLevel} onChange={(e) => setFormat(Number(e.target.value))} className={sel}>
-        {HEADING_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-
-      <select value={activeFontSize} onChange={(e) => handleFontSize(e.target.value)} className={`${sel} w-20`}>
-        <option value="">Size</option>
-        {[10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64].map((s) => (
-          <option key={s} value={`${s}px`}>{s}</option>
-        ))}
-      </select>
-
-      <select
-        value={activeLineSpacing}
-        onChange={(e) => {
-          if (!editor) return;
-          const val = e.target.value;
-          const cmd = editor.chain().focus() as any;
-          if (val) cmd.setLineSpacing(val).run();
-          else cmd.unsetLineSpacing().run();
-        }}
-        className={`${sel} w-24`}
+    <div className="border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 text-sm">
+      <div className="flex items-center gap-3 px-8 py-2">
+      <button
+        onClick={() => setFormatOpen((o) => !o)}
+        className={`px-3 py-1 rounded border text-sm transition-colors ${
+          formatOpen
+            ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100"
+            : "border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200"
+        }`}
+        title="Show formatting options"
       >
-        <option value="">Spacing</option>
-        {[["1", "Single"], ["1.15", "1.15"], ["1.5", "1.5×"], ["2", "Double"], ["2.5", "2.5×"], ["3", "Triple"]].map(([val, label]) => (
-          <option key={val} value={val}>{label}</option>
-        ))}
-      </select>
+        Format {formatOpen ? "▴" : "▾"}
+      </button>
 
-      <div ref={paraSpacingRef} className="relative">
-        <button
-          onClick={() => setParaSpacingOpen((o) => !o)}
-          className={`px-3 py-1 rounded border text-sm transition-colors ${
-            paraSpacingOpen
-              ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100"
-              : "border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200"
-          }`}
-          title="Paragraph spacing"
-        >
-          ¶
-        </button>
-        {paraSpacingOpen && (
-          <div className="absolute left-0 mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded shadow-md z-20 p-3 flex flex-col gap-2 w-48">
-            <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">Paragraph spacing</p>
-            <label className="text-xs text-zinc-500 dark:text-zinc-400">Space before</label>
-            <select
-              value={activeSpacingBefore}
-              onChange={(e) => (editor.chain().focus() as any).setParaSpacing(e.target.value, activeSpacingAfter).run()}
-              className={sel}
-            >
-              <option value="">None</option>
-              {["4pt","8pt","12pt","16pt","24pt","32pt","48pt"].map(v => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
-            <label className="text-xs text-zinc-500 dark:text-zinc-400">Space after</label>
-            <select
-              value={activeSpacingAfter}
-              onChange={(e) => (editor.chain().focus() as any).setParaSpacing(activeSpacingBefore, e.target.value).run()}
-              className={sel}
-            >
-              <option value="">None</option>
-              {["4pt","8pt","12pt","16pt","24pt","32pt","48pt"].map(v => (
-                <option key={v} value={v}>{v}</option>
-              ))}
-            </select>
-          </div>
-        )}
-      </div>
-
-      <button onClick={() => editor.chain().focus().selectAll().run()} className={btn}>
+      <button onClick={() => editor.chain().focus().selectAll().run()} className={btn} style={{marginLeft: "auto"}}>
         Select all
       </button>
 
@@ -311,6 +254,82 @@ function Toolbar({
       >
         Contents
       </button>
+      </div>
+
+      {formatOpen && (
+        <div className="flex items-center gap-3 px-8 py-2 border-t border-zinc-100 dark:border-zinc-800">
+          <select value={activeLevel} onChange={(e) => setFormat(Number(e.target.value))} className={sel}>
+            {HEADING_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+
+          <select value={activeFontSize} onChange={(e) => handleFontSize(e.target.value)} className={`${sel} w-20`}>
+            <option value="">Size</option>
+            {[10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 64].map((s) => (
+              <option key={s} value={`${s}px`}>{s}</option>
+            ))}
+          </select>
+
+          <select
+            value={activeLineSpacing}
+            onChange={(e) => {
+              if (!editor) return;
+              const val = e.target.value;
+              const cmd = editor.chain().focus() as any;
+              if (val) cmd.setLineSpacing(val).run();
+              else cmd.unsetLineSpacing().run();
+            }}
+            className={`${sel} w-24`}
+          >
+            <option value="">Spacing</option>
+            {[["1", "Single"], ["1.15", "1.15"], ["1.5", "1.5×"], ["2", "Double"], ["2.5", "2.5×"], ["3", "Triple"]].map(([val, label]) => (
+              <option key={val} value={val}>{label}</option>
+            ))}
+          </select>
+
+          <div ref={paraSpacingRef} className="relative">
+            <button
+              onClick={() => setParaSpacingOpen((o) => !o)}
+              className={`px-3 py-1 rounded border text-sm transition-colors ${
+                paraSpacingOpen
+                  ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100"
+                  : "border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200"
+              }`}
+              title="Paragraph spacing"
+            >
+              ¶
+            </button>
+            {paraSpacingOpen && (
+              <div className="absolute left-0 mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded shadow-md z-20 p-3 flex flex-col gap-2 w-48">
+                <p className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">Paragraph spacing</p>
+                <label className="text-xs text-zinc-500 dark:text-zinc-400">Space before</label>
+                <select
+                  value={activeSpacingBefore}
+                  onChange={(e) => (editor.chain().focus() as any).setParaSpacing(e.target.value, activeSpacingAfter).run()}
+                  className={sel}
+                >
+                  <option value="">None</option>
+                  {["4pt","8pt","12pt","16pt","24pt","32pt","48pt"].map(v => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+                <label className="text-xs text-zinc-500 dark:text-zinc-400">Space after</label>
+                <select
+                  value={activeSpacingAfter}
+                  onChange={(e) => (editor.chain().focus() as any).setParaSpacing(activeSpacingBefore, e.target.value).run()}
+                  className={sel}
+                >
+                  <option value="">None</option>
+                  {["4pt","8pt","12pt","16pt","24pt","32pt","48pt"].map(v => (
+                    <option key={v} value={v}>{v}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
