@@ -12,6 +12,7 @@ import { FoldableHeading } from "@/lib/foldable-heading";
 import { Indent, CLEANUP_RULES } from "@/lib/indent";
 import { DrawingBlock } from "@/lib/drawing-block";
 import { CustomCodeBlock } from "@/lib/code-block";
+import Image from "@tiptap/extension-image";
 import FileViewer from "@/components/FileViewer";
 
 type NoteMeta = { id: number; title: string; updatedAt: string };
@@ -56,6 +57,7 @@ function Toolbar({
   const [paraSpacingOpen, setParaSpacingOpen] = useState(false);
   const [formatOpen, setFormatOpen] = useState(false);
   const paraSpacingRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -237,6 +239,31 @@ function Toolbar({
         title="Insert a drawing box"
       >
         ✏ Draw
+      </button>
+
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            const src = reader.result as string;
+            editor.chain().focus().setImage({ src }).run();
+          };
+          reader.readAsDataURL(file);
+          e.target.value = "";
+        }}
+      />
+      <button
+        onClick={() => imageInputRef.current?.click()}
+        className={btn}
+        title="Insert image"
+      >
+        🖼 Image
       </button>
 
       <div className="flex items-center gap-1">
@@ -436,6 +463,7 @@ export default function NotebookPage() {
     extensions: [
       StarterKit.configure({ heading: false, codeBlock: false }),
       CustomCodeBlock,
+      Image.configure({ inline: false }),
       FoldableHeading,
       TextStyle,
       FontSize,
