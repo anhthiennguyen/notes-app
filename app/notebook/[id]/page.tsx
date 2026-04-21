@@ -263,7 +263,7 @@ function Toolbar({
         className={btn}
         title="Insert image"
       >
-        🖼 Image
+        Image
       </button>
 
       <div className="flex items-center gap-1">
