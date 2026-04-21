@@ -463,7 +463,7 @@ export default function NotebookPage() {
     extensions: [
       StarterKit.configure({ heading: false, codeBlock: false }),
       CustomCodeBlock,
-      Image.configure({ inline: false }),
+      Image.configure({ inline: false, allowBase64: true }),
       FoldableHeading,
       TextStyle,
       FontSize,
@@ -633,11 +633,17 @@ export default function NotebookPage() {
   async function save() {
     if (!activeNote || !editor) return;
     const data = { title, content: editor.getHTML(), titleSetManually: titleIsManualRef.current };
-    await fetch(`/api/notes/${activeNote.id}`, {
+    const res = await fetch(`/api/notes/${activeNote.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => res.statusText);
+      console.error("Save failed:", res.status, msg);
+      alert(`Save failed (${res.status}): ${msg}`);
+      return;
+    }
     setDirty(false);
     setNotes((prev) =>
       prev.map((n) =>
