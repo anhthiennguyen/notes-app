@@ -14,6 +14,7 @@ import { DrawingBlock } from "@/lib/drawing-block";
 import { CustomCodeBlock } from "@/lib/code-block";
 import Image from "@tiptap/extension-image";
 import FileViewer from "@/components/FileViewer";
+import ConfirmModal from "@/components/ConfirmModal";
 
 type NoteMeta = { id: number; title: string; updatedAt: string };
 type Note = NoteMeta & { content: string; maxWidth?: number | null; titleSetManually: boolean };
@@ -438,6 +439,7 @@ export default function NotebookPage() {
   const [dirty, setDirty] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [renamingNoteId, setRenamingNoteId] = useState<number | null>(null);
+  const [deleteNoteConfirm, setDeleteNoteConfirm] = useState<number | null>(null);
   const [renameVal, setRenameVal] = useState("");
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const [fileViewerPos, setFileViewerPos] = useState(40);
@@ -794,7 +796,7 @@ export default function NotebookPage() {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  deleteNote(note.id);
+                  setDeleteNoteConfirm(note.id);
                 }}
                 className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500 ml-2 text-xs transition-opacity"
               >
@@ -969,6 +971,14 @@ export default function NotebookPage() {
         )}
       </main>
       </div>
+
+      <ConfirmModal
+        open={deleteNoteConfirm !== null}
+        title="Delete note?"
+        message="This cannot be undone."
+        onConfirm={() => { deleteNote(deleteNoteConfirm!); setDeleteNoteConfirm(null); }}
+        onCancel={() => setDeleteNoteConfirm(null)}
+      />
     </div>
   );
 }

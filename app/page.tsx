@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useTheme } from "@/lib/theme";
+import ConfirmModal from "@/components/ConfirmModal";
 
 type Notebook = {
   id: number;
@@ -20,6 +21,7 @@ export default function Home() {
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameVal, setRenameVal] = useState("");
   const [exportingId, setExportingId] = useState<number | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string } | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const coverTargetId = useRef<number | null>(null);
@@ -338,9 +340,7 @@ export default function Home() {
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (confirm(`Delete "${nb.name}"? This will also delete all its notes and diagram.`)) {
-                        deleteNotebook(nb.id);
-                      }
+                      setDeleteConfirm({ id: nb.id, name: nb.name });
                     }}
                     className="text-zinc-400 hover:text-red-500 transition-colors p-1 rounded hover:bg-white/80 dark:hover:bg-zinc-700"
                     title="Delete"
@@ -354,6 +354,13 @@ export default function Home() {
         )}
       </main>
 
+      <ConfirmModal
+        open={deleteConfirm !== null}
+        title={`Delete "${deleteConfirm?.name}"?`}
+        message="This will also delete all its notes and diagram. This cannot be undone."
+        onConfirm={() => { deleteNotebook(deleteConfirm!.id); setDeleteConfirm(null); }}
+        onCancel={() => setDeleteConfirm(null)}
+      />
     </div>
   );
 }
