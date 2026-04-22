@@ -440,7 +440,9 @@ export default function NotebookPage() {
   const [zoom, setZoom] = useState(1);
   const [renamingNoteId, setRenamingNoteId] = useState<number | null>(null);
   const [deleteNoteConfirm, setDeleteNoteConfirm] = useState<number | null>(null);
+  const [newNoteMenuOpen, setNewNoteMenuOpen] = useState(false);
   const [renameVal, setRenameVal] = useState("");
+  const importInputRef = useRef<HTMLInputElement>(null);
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const [fileViewerPos, setFileViewerPos] = useState(40);
   const fileViewerDraggingRef = useRef(false);
@@ -632,6 +634,17 @@ export default function NotebookPage() {
     openNote(note.id);
   }
 
+  async function importNote(file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("notebookId", String(notebookId));
+    const res = await fetch("/api/import", { method: "POST", body: formData });
+    if (!res.ok) { alert("Import failed: " + (await res.text().catch(() => res.statusText))); return; }
+    const note: Note = await res.json();
+    await fetchNotes();
+    openNote(note.id);
+  }
+
   async function save() {
     if (!activeNote || !editor) return;
     const data = { title, content: editor.getHTML(), titleSetManually: titleIsManualRef.current };
@@ -751,12 +764,51 @@ export default function NotebookPage() {
           >
             ⊞
           </button>
-          <button
-            onClick={newNote}
-            className="flex-1 text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded px-3 py-1.5 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
-          >
-            New note
-          </button>
+          <div className="relative flex-1">
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".pdf,.docx"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) importNote(file);
+                e.target.value = "";
+                setNewNoteMenuOpen(false);
+              }}
+            />
+            <div className="flex rounded overflow-hidden">
+              <button
+                onClick={newNote}
+                className="flex-1 text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1.5 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
+              >
+                New note
+              </button>
+              <button
+                onClick={() => setNewNoteMenuOpen((o) => !o)}
+                className="text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-2 py-1.5 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors border-l border-zinc-700 dark:border-zinc-300"
+                title="More options"
+              >
+                ▾
+              </button>
+            </div>
+            {newNoteMenuOpen && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded shadow-lg z-20 overflow-hidden">
+                <button
+                  onClick={() => { newNote(); setNewNoteMenuOpen(false); }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200 transition-colors"
+                >
+                  Blank note
+                </button>
+                <button
+                  onClick={() => importInputRef.current?.click()}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200 transition-colors border-t border-zinc-100 dark:border-zinc-700"
+                >
+                  Import PDF or Word
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         <ul className="flex-1 overflow-y-auto">
           {notes.map((note) => (
