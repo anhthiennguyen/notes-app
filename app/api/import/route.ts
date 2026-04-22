@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
   }
 
   const title = name.replace(/\.(pdf|docx)$/i, "");
-  const notebookId = req.nextUrl.searchParams.get("notebookId");
+  const notebookId = formData.get("notebookId") as string | null;
   const note = await prisma.note.create({
     data: {
       title,
