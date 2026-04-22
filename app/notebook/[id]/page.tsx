@@ -779,10 +779,9 @@ export default function NotebookPage() {
             />
             <button
               onClick={() => setNewNoteMenuOpen((o) => !o)}
-              className="w-full text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1.5 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors rounded flex items-center justify-between"
+              className="w-full text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 px-3 py-1.5 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors rounded"
             >
-              <span>+ New note</span>
-              <span className="text-xs opacity-70">▾</span>
+              +
             </button>
             {newNoteMenuOpen && (
               <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded shadow-lg z-20 overflow-hidden">
