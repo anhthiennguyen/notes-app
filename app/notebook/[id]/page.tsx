@@ -14,6 +14,7 @@ import { DrawingBlock } from "@/lib/drawing-block";
 import { CustomCodeBlock } from "@/lib/code-block";
 import Image from "@tiptap/extension-image";
 import Youtube from "@tiptap/extension-youtube";
+import { mergeAttributes } from "@tiptap/core";
 import FileViewer from "@/components/FileViewer";
 import ConfirmModal from "@/components/ConfirmModal";
 
@@ -500,7 +501,7 @@ function LinksPanel({ editor }: { editor: ReturnType<typeof useEditor> | null })
     const collected: VideoItem[] = [];
     editor.state.doc.forEach((node) => {
       if (node.type.name === "youtube") {
-        const embedUrl = getYoutubeEmbedUrl(node.attrs.src);
+        const embedUrl = node.attrs.src ? getYoutubeEmbedUrl(node.attrs.src) : null;
         if (embedUrl) collected.push({ src: node.attrs.src, title: null, embedUrl });
       }
     });
@@ -620,27 +621,13 @@ export default function NotebookPage() {
       Indent,
       DrawingBlock,
       Placeholder.configure({ placeholder: "Start writing…" }),
-      Youtube.configure({ width: 640, height: 360, autoplay: false }),
+      Youtube.extend({
+        renderHTML({ HTMLAttributes }) {
+          if (!HTMLAttributes.src) return ["div", {}];
+          return ["div", { "data-youtube-video": "" }, ["iframe", mergeAttributes(this.options.HTMLAttributes, HTMLAttributes)]];
+        },
+      }).configure({ width: 640, height: 360, autoplay: false, addPasteHandler: true }),
     ],
-    editorProps: {
-      handlePaste(view, event) {
-        const text = event.clipboardData?.getData("text/plain")?.trim() ?? "";
-        const ytMatch = text.match(
-          /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/
-        );
-        if (ytMatch) {
-          event.preventDefault();
-          const { state, dispatch } = view;
-          const node = state.schema.nodes.youtube?.create({ src: text });
-          if (node) {
-            const tr = state.tr.replaceSelectionWith(node);
-            dispatch(tr);
-            return true;
-          }
-        }
-        return false;
-      },
-    },
     content: "",
     onUpdate({ editor }) {
       if (!activeNote) return;
