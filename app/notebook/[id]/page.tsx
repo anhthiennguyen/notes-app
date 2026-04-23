@@ -480,51 +480,81 @@ function TableOfContents({
 
 // ── Links panel ──────────────────────────────────────────────────────────────
 
+function getYoutubeEmbedUrl(src: string): string | null {
+  const match = src.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  if (!match) return null;
+  return `https://www.youtube.com/embed/${match[1]}`;
+}
+
+type MediaItem =
+  | { kind: "youtube"; src: string; title: string | null; embedUrl: string }
+  | { kind: "image"; src: string };
+
 function LinksPanel({ editor }: { editor: ReturnType<typeof useEditor> | null }) {
-  const [videos, setVideos] = useState<{ src: string; title: string | null }[]>([]);
+  const [items, setItems] = useState<MediaItem[]>([]);
 
   useEffect(() => {
     if (!editor) return;
-    const srcs: string[] = [];
+    const collected: MediaItem[] = [];
     editor.state.doc.forEach((node) => {
-      if (node.type.name === "youtube") srcs.push(node.attrs.src);
+      if (node.type.name === "youtube") {
+        const embedUrl = getYoutubeEmbedUrl(node.attrs.src);
+        if (embedUrl) collected.push({ kind: "youtube", src: node.attrs.src, title: null, embedUrl });
+      } else if (node.type.name === "image") {
+        collected.push({ kind: "image", src: node.attrs.src });
+      }
     });
-    if (srcs.length === 0) { setVideos([]); return; }
+    setItems(collected);
 
-    setVideos(srcs.map((src) => ({ src, title: null })));
-
-    srcs.forEach((src, i) => {
-      fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(src)}&format=json`)
+    collected.forEach((item, i) => {
+      if (item.kind !== "youtube") return;
+      fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(item.src)}&format=json`)
         .then((r) => r.json())
         .then((data) => {
-          setVideos((prev) => prev.map((v, j) => j === i ? { ...v, title: data.title } : v));
+          setItems((prev) => prev.map((v, j) =>
+            j === i && v.kind === "youtube" ? { ...v, title: data.title } : v
+          ));
         })
         .catch(() => {});
     });
   }, [editor?.state.doc]);
 
   return (
-    <div className="px-8 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900">
-      <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">
+    <div className="px-8 py-4 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900">
+      <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-3">
         Links
       </p>
-      {videos.length === 0 ? (
-        <p className="text-zinc-400 dark:text-zinc-500 text-sm italic">No YouTube videos in this note.</p>
+      {items.length === 0 ? (
+        <p className="text-zinc-400 dark:text-zinc-500 text-sm italic">No media in this note.</p>
       ) : (
-        <ul className="space-y-0.5">
-          {videos.map((v, i) => (
-            <li key={i}>
-              <a
-                href={v.src}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:underline truncate max-w-full block"
-              >
-                {v.title ?? v.src}
-              </a>
-            </li>
-          ))}
-        </ul>
+        <div className="flex flex-col gap-4">
+          {items.map((item, i) =>
+            item.kind === "youtube" ? (
+              <div key={i} className="flex flex-col gap-1.5">
+                <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
+                  <iframe
+                    src={item.embedUrl}
+                    className="absolute inset-0 w-full h-full rounded"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+                {item.title && (
+                  <a
+                    href={item.src}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-zinc-500 dark:text-zinc-400 hover:underline truncate"
+                  >
+                    {item.title}
+                  </a>
+                )}
+              </div>
+            ) : (
+              <img key={i} src={item.src} alt="" className="w-full rounded object-contain max-h-64" />
+            )
+          )}
+        </div>
       )}
     </div>
   );
