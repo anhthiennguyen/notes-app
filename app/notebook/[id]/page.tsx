@@ -430,7 +430,7 @@ export default function NotebookPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [tocVisible, setTocVisible] = useState(false);
   const [headings, setHeadings] = useState<HeadingEntry[]>([]);
-  const [sidebarVisible, setSidebarVisible] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(true);
   const [activeLevel, setActiveLevel] = useState(0);
   const [activeFontSize, setActiveFontSize] = useState("");
   const [activeLineSpacing, setActiveLineSpacing] = useState("");
@@ -639,6 +639,7 @@ export default function NotebookPage() {
     setTitle(note.title);
     setMaxWidth(note.maxWidth ?? 56);
     setDirty(false);
+    setSidebarVisible(false);
     editor?.commands.setContent(note.content);
     if (editor) extractHeadings(editor);
   }
