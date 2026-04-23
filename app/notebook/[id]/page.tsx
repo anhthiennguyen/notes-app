@@ -19,7 +19,8 @@ import ConfirmModal from "@/components/ConfirmModal";
 
 type NoteMeta = { id: number; title: string; updatedAt: string };
 type Note = NoteMeta & { content: string; maxWidth?: number | null; titleSetManually: boolean };
-type HeadingEntry = { level: number; text: string; pos: number };
+type HeadingEntry = { level: number; text: string; pos: number; type: "heading" | "bold" };
+type TocSettings = { h1: boolean; h2: boolean; h3: boolean; bold: boolean };
 
 // ── Heading dropdown ────────────────────────────────────────────────────────
 
@@ -376,41 +377,89 @@ function Toolbar({
 
 function TableOfContents({
   headings,
+  tocSettings,
+  onTocSettingsChange,
   onJump,
 }: {
   headings: HeadingEntry[];
+  tocSettings: TocSettings;
+  onTocSettingsChange: (s: TocSettings) => void;
   onJump: (pos: number) => void;
 }) {
-  if (headings.length === 0) {
-    return (
-      <div className="px-8 py-3 text-zinc-400 dark:text-zinc-500 text-sm border-b border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 italic">
-        No headings yet — add Heading 1/2/3 to populate the table of contents.
-      </div>
-    );
-  }
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const minLevel = Math.min(...headings.map((h) => h.level));
+  const filtered = headings.filter((h) => {
+    if (h.type === "bold") return tocSettings.bold;
+    if (h.level === 1) return tocSettings.h1;
+    if (h.level === 2) return tocSettings.h2;
+    if (h.level === 3) return tocSettings.h3;
+    return true;
+  });
+
+  const minLevel = filtered.length > 0
+    ? Math.min(...filtered.filter((h) => h.type === "heading").map((h) => h.level).concat([99]))
+    : 1;
+
+  const toggle = (key: keyof TocSettings) =>
+    onTocSettingsChange({ ...tocSettings, [key]: !tocSettings[key] });
 
   return (
     <div className="px-8 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900">
-      <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">
-        Table of Contents
-      </p>
-      <ul className="space-y-0.5">
-        {headings.map((h, i) => (
-          <li
-            key={i}
-            style={{ paddingLeft: `${(h.level - minLevel) * 16}px` }}
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">
+          Table of Contents
+        </p>
+        <div className="relative">
+          <button
+            onClick={() => setSettingsOpen((o) => !o)}
+            className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors"
+            title="TOC settings"
           >
-            <button
-              onClick={() => onJump(h.pos)}
-              className="text-sm text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:underline text-left truncate max-w-full"
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="8" cy="8" r="2"/>
+              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41"/>
+            </svg>
+          </button>
+          {settingsOpen && (
+            <div className="absolute right-0 top-full mt-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded shadow-lg z-20 p-2 flex flex-col gap-1 min-w-[110px]">
+              {(["h1", "h2", "h3", "bold"] as (keyof TocSettings)[]).map((key) => (
+                <label key={key} className="flex items-center gap-2 cursor-pointer text-xs text-zinc-700 dark:text-zinc-200 hover:text-zinc-900 dark:hover:text-zinc-100 px-1 py-0.5 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700">
+                  <input
+                    type="checkbox"
+                    checked={tocSettings[key]}
+                    onChange={() => toggle(key)}
+                    className="accent-zinc-800 dark:accent-zinc-200"
+                  />
+                  {key === "h1" ? "Heading 1" : key === "h2" ? "Heading 2" : key === "h3" ? "Heading 3" : "Bold"}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      {filtered.length === 0 ? (
+        <p className="text-zinc-400 dark:text-zinc-500 text-sm italic">Nothing to show — adjust settings or add headings.</p>
+      ) : (
+        <ul className="space-y-0.5">
+          {filtered.map((h, i) => (
+            <li
+              key={i}
+              style={{ paddingLeft: h.type === "bold" ? "0px" : `${(h.level - minLevel) * 16}px` }}
             >
-              {h.text}
-            </button>
-          </li>
-        ))}
-      </ul>
+              <button
+                onClick={() => onJump(h.pos)}
+                className={`text-sm hover:underline text-left truncate max-w-full ${
+                  h.type === "bold"
+                    ? "font-semibold text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100"
+                    : "text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100"
+                }`}
+              >
+                {h.text}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -430,6 +479,7 @@ export default function NotebookPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [tocVisible, setTocVisible] = useState(false);
   const [headings, setHeadings] = useState<HeadingEntry[]>([]);
+  const [tocSettings, setTocSettings] = useState<TocSettings>({ h1: true, h2: true, h3: true, bold: false });
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [activeLevel, setActiveLevel] = useState(0);
   const [activeFontSize, setActiveFontSize] = useState("");
@@ -455,7 +505,19 @@ export default function NotebookPage() {
       const found: HeadingEntry[] = [];
       ed.state.doc.forEach((node, offset) => {
         if (node.type.name === "heading") {
-          found.push({ level: node.attrs.level, text: node.textContent, pos: offset });
+          found.push({ level: node.attrs.level, text: node.textContent, pos: offset, type: "heading" });
+        } else if (node.type.name === "paragraph") {
+          let hasText = false;
+          let allBold = true;
+          node.forEach((inline) => {
+            if (inline.type.name === "text" && inline.text?.trim()) {
+              hasText = true;
+              if (!inline.marks.some((m) => m.type.name === "bold")) allBold = false;
+            }
+          });
+          if (hasText && allBold) {
+            found.push({ level: 0, text: node.textContent, pos: offset, type: "bold" });
+          }
         }
       });
       setHeadings(found);
@@ -976,7 +1038,7 @@ export default function NotebookPage() {
             />
 
             {tocVisible && (
-              <TableOfContents headings={headings} onJump={jumpToHeading} />
+              <TableOfContents headings={headings} tocSettings={tocSettings} onTocSettingsChange={setTocSettings} onJump={jumpToHeading} />
             )}
 
             <div className="flex-1 overflow-y-auto bg-zinc-100 dark:bg-zinc-950 py-8">
