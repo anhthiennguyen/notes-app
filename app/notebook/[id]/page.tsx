@@ -481,39 +481,32 @@ function TableOfContents({
 // ── Links panel ──────────────────────────────────────────────────────────────
 
 function getYoutubeEmbedUrl(src: string): string | null {
-  const match = src.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+  const match = src.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
   if (!match) return null;
   return `https://www.youtube.com/embed/${match[1]}`;
 }
 
-type MediaItem =
-  | { kind: "youtube"; src: string; title: string | null; embedUrl: string }
-  | { kind: "image"; src: string };
+type VideoItem = { src: string; title: string | null; embedUrl: string };
 
 function LinksPanel({ editor }: { editor: ReturnType<typeof useEditor> | null }) {
-  const [items, setItems] = useState<MediaItem[]>([]);
+  const [videos, setVideos] = useState<VideoItem[]>([]);
 
   useEffect(() => {
     if (!editor) return;
-    const collected: MediaItem[] = [];
+    const collected: VideoItem[] = [];
     editor.state.doc.forEach((node) => {
       if (node.type.name === "youtube") {
         const embedUrl = getYoutubeEmbedUrl(node.attrs.src);
-        if (embedUrl) collected.push({ kind: "youtube", src: node.attrs.src, title: null, embedUrl });
-      } else if (node.type.name === "image") {
-        collected.push({ kind: "image", src: node.attrs.src });
+        if (embedUrl) collected.push({ src: node.attrs.src, title: null, embedUrl });
       }
     });
-    setItems(collected);
+    setVideos(collected);
 
     collected.forEach((item, i) => {
-      if (item.kind !== "youtube") return;
       fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(item.src)}&format=json`)
         .then((r) => r.json())
         .then((data) => {
-          setItems((prev) => prev.map((v, j) =>
-            j === i && v.kind === "youtube" ? { ...v, title: data.title } : v
-          ));
+          setVideos((prev) => prev.map((v, j) => j === i ? { ...v, title: data.title } : v));
         })
         .catch(() => {});
     });
@@ -524,36 +517,32 @@ function LinksPanel({ editor }: { editor: ReturnType<typeof useEditor> | null })
       <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-3">
         Links
       </p>
-      {items.length === 0 ? (
-        <p className="text-zinc-400 dark:text-zinc-500 text-sm italic">No media in this note.</p>
+      {videos.length === 0 ? (
+        <p className="text-zinc-400 dark:text-zinc-500 text-sm italic">No YouTube videos in this note.</p>
       ) : (
         <div className="flex flex-col gap-4">
-          {items.map((item, i) =>
-            item.kind === "youtube" ? (
-              <div key={i} className="flex flex-col gap-1.5">
-                <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
-                  <iframe
-                    src={item.embedUrl}
-                    className="absolute inset-0 w-full h-full rounded"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
-                </div>
-                {item.title && (
-                  <a
-                    href={item.src}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-zinc-500 dark:text-zinc-400 hover:underline truncate"
-                  >
-                    {item.title}
-                  </a>
-                )}
+          {videos.map((v, i) => (
+            <div key={i} className="flex flex-col gap-1.5">
+              <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
+                <iframe
+                  src={v.embedUrl}
+                  className="absolute inset-0 w-full h-full rounded"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
               </div>
-            ) : (
-              <img key={i} src={item.src} alt="" className="w-full rounded object-contain max-h-64" />
-            )
-          )}
+              {v.title && (
+                <a
+                  href={v.src}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-zinc-500 dark:text-zinc-400 hover:underline truncate"
+                >
+                  {v.title}
+                </a>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
