@@ -430,7 +430,7 @@ export default function NotebookPage() {
   const [exportOpen, setExportOpen] = useState(false);
   const [tocVisible, setTocVisible] = useState(false);
   const [headings, setHeadings] = useState<HeadingEntry[]>([]);
-  const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [sidebarVisible, setSidebarVisible] = useState(false);
   const [activeLevel, setActiveLevel] = useState(0);
   const [activeFontSize, setActiveFontSize] = useState("");
   const [activeLineSpacing, setActiveLineSpacing] = useState("");
