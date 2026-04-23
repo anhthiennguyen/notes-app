@@ -45,6 +45,8 @@ function Toolbar({
   onMaxWidthChange,
   tocVisible,
   onToggleToc,
+  linksVisible,
+  onToggleLinks,
 }: {
   editor: ReturnType<typeof useEditor> | null;
   activeLevel: number;
@@ -56,6 +58,8 @@ function Toolbar({
   onMaxWidthChange: (v: number) => void;
   tocVisible: boolean;
   onToggleToc: () => void;
+  linksVisible: boolean;
+  onToggleLinks: () => void;
 }) {
   const [paraSpacingOpen, setParaSpacingOpen] = useState(false);
   const [formatOpen, setFormatOpen] = useState(false);
@@ -293,6 +297,16 @@ function Toolbar({
       >
         Contents
       </button>
+      <button
+        onClick={onToggleLinks}
+        className={`px-3 py-1 rounded border text-sm transition-colors ${
+          linksVisible
+            ? "bg-zinc-900 text-white border-zinc-900 dark:bg-zinc-100 dark:text-zinc-900 dark:border-zinc-100"
+            : "border-zinc-300 dark:border-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200"
+        }`}
+      >
+        Links
+      </button>
       </div>
 
       {formatOpen && (
@@ -464,6 +478,58 @@ function TableOfContents({
   );
 }
 
+// ── Links panel ──────────────────────────────────────────────────────────────
+
+function LinksPanel({ editor }: { editor: ReturnType<typeof useEditor> | null }) {
+  const [videos, setVideos] = useState<{ src: string; title: string | null }[]>([]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const srcs: string[] = [];
+    editor.state.doc.forEach((node) => {
+      if (node.type.name === "youtube") srcs.push(node.attrs.src);
+    });
+    if (srcs.length === 0) { setVideos([]); return; }
+
+    setVideos(srcs.map((src) => ({ src, title: null })));
+
+    srcs.forEach((src, i) => {
+      fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(src)}&format=json`)
+        .then((r) => r.json())
+        .then((data) => {
+          setVideos((prev) => prev.map((v, j) => j === i ? { ...v, title: data.title } : v));
+        })
+        .catch(() => {});
+    });
+  }, [editor?.state.doc]);
+
+  return (
+    <div className="px-8 py-3 border-b border-zinc-200 dark:border-zinc-700 bg-zinc-50 dark:bg-zinc-900">
+      <p className="text-xs font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide mb-2">
+        Links
+      </p>
+      {videos.length === 0 ? (
+        <p className="text-zinc-400 dark:text-zinc-500 text-sm italic">No YouTube videos in this note.</p>
+      ) : (
+        <ul className="space-y-0.5">
+          {videos.map((v, i) => (
+            <li key={i}>
+              <a
+                href={v.src}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:underline truncate max-w-full block"
+              >
+                {v.title ?? v.src}
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function NotebookPage() {
@@ -478,6 +544,7 @@ export default function NotebookPage() {
   const [title, setTitle] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
   const [tocVisible, setTocVisible] = useState(false);
+  const [linksVisible, setLinksVisible] = useState(false);
   const [headings, setHeadings] = useState<HeadingEntry[]>([]);
   const [tocSettings, setTocSettings] = useState<TocSettings>({ h1: true, h2: true, h3: true, bold: false });
   const [sidebarVisible, setSidebarVisible] = useState(true);
@@ -1035,11 +1102,14 @@ export default function NotebookPage() {
               onMaxWidthChange={setMaxWidth}
               tocVisible={tocVisible}
               onToggleToc={() => setTocVisible((v) => !v)}
+              linksVisible={linksVisible}
+              onToggleLinks={() => setLinksVisible((v) => !v)}
             />
 
             {tocVisible && (
               <TableOfContents headings={headings} tocSettings={tocSettings} onTocSettingsChange={setTocSettings} onJump={jumpToHeading} />
             )}
+            {linksVisible && <LinksPanel editor={editor} />}
 
             <div className="flex-1 overflow-y-auto bg-zinc-100 dark:bg-zinc-950 py-8">
               <EditorContent
