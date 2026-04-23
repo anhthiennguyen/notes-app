@@ -480,10 +480,14 @@ function TableOfContents({
 
 // ── Links panel ──────────────────────────────────────────────────────────────
 
-function getYoutubeEmbedUrl(src: string): string | null {
+function getYoutubeVideoId(src: string): string | null {
   const match = src.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
-  if (!match) return null;
-  return `https://www.youtube.com/embed/${match[1]}`;
+  return match ? match[1] : null;
+}
+
+function getYoutubeEmbedUrl(src: string): string | null {
+  const id = getYoutubeVideoId(src);
+  return id ? `https://www.youtube.com/embed/${id}` : null;
 }
 
 type VideoItem = { src: string; title: string | null; embedUrl: string };
@@ -503,7 +507,10 @@ function LinksPanel({ editor }: { editor: ReturnType<typeof useEditor> | null })
     setVideos(collected);
 
     collected.forEach((item, i) => {
-      fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(item.src)}&format=json`)
+      const id = getYoutubeVideoId(item.src);
+      if (!id) return;
+      const watchUrl = `https://www.youtube.com/watch?v=${id}`;
+      fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(watchUrl)}&format=json`)
         .then((r) => r.json())
         .then((data) => {
           setVideos((prev) => prev.map((v, j) => j === i ? { ...v, title: data.title } : v));
@@ -524,7 +531,7 @@ function LinksPanel({ editor }: { editor: ReturnType<typeof useEditor> | null })
           {videos.map((v, i) => (
             <li key={i}>
               <a
-                href={v.src}
+                href={`https://www.youtube.com/watch?v=${getYoutubeVideoId(v.src) ?? ""}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:underline truncate block"
