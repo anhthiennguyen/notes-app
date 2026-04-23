@@ -520,30 +520,20 @@ function LinksPanel({ editor }: { editor: ReturnType<typeof useEditor> | null })
       {videos.length === 0 ? (
         <p className="text-zinc-400 dark:text-zinc-500 text-sm italic">No YouTube videos in this note.</p>
       ) : (
-        <div className="flex flex-col gap-4">
+        <ul className="space-y-1">
           {videos.map((v, i) => (
-            <div key={i} className="flex flex-col gap-1.5">
-              <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
-                <iframe
-                  src={v.embedUrl}
-                  className="absolute inset-0 w-full h-full rounded"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              </div>
-              {v.title && (
-                <a
-                  href={v.src}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-zinc-500 dark:text-zinc-400 hover:underline truncate"
-                >
-                  {v.title}
-                </a>
-              )}
-            </div>
+            <li key={i}>
+              <a
+                href={v.src}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-zinc-700 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 hover:underline truncate block"
+              >
+                {v.title ?? v.src}
+              </a>
+            </li>
           ))}
-        </div>
+        </ul>
       )}
     </div>
   );
