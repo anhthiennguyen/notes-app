@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import * as d3 from "d3";
@@ -283,6 +283,200 @@ function wrapLabel(text: string, radius: number): string[] {
   return lines.slice(0, 5);
 }
 
+// ── Keyword co-occurrence graph ───────────────────────────────────────────────
+
+function KeywordGraphView({
+  keywords,
+  bubbles,
+  dark,
+  size,
+}: {
+  keywords: CustomKeyword[];
+  bubbles: Bubble[];
+  dark: boolean;
+  size: { w: number; h: number };
+}) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 60, y: 60 });
+  const [overrides, setOverrides] = useState<Record<string, { x: number; y: number }>>({});
+  const panStartRef = useRef<{ mx: number; my: number; px: number; py: number } | null>(null);
+  const dragRef = useRef<{ id: string; mx: number; my: number; ox: number; oy: number } | null>(null);
+
+  const { nodes, edges, basePositions } = useMemo(() => {
+    if (!keywords.length) return { nodes: keywords, edges: [] as [string, string][], basePositions: {} as Record<string, { x: number; y: number }> };
+
+    const boldLabels = bubbles.filter(b => b.nodeType === "bold").map(b => b.label.toLowerCase());
+
+    // Build adjacency
+    const adj = new Map<string, Set<string>>();
+    keywords.forEach(kw => adj.set(kw.id, new Set()));
+    for (const label of boldLabels) {
+      const hit = keywords.filter(kw => label.includes(kw.text.toLowerCase()));
+      for (let i = 0; i < hit.length; i++)
+        for (let j = i + 1; j < hit.length; j++) {
+          adj.get(hit[i].id)!.add(hit[j].id);
+          adj.get(hit[j].id)!.add(hit[i].id);
+        }
+    }
+
+    // Connected components
+    const visited = new Set<string>();
+    const components: string[][] = [];
+    for (const kw of keywords) {
+      if (visited.has(kw.id)) continue;
+      const comp: string[] = [];
+      const q = [kw.id];
+      visited.add(kw.id);
+      while (q.length) {
+        const id = q.shift()!;
+        comp.push(id);
+        for (const nb of adj.get(id) ?? []) {
+          if (!visited.has(nb)) { visited.add(nb); q.push(nb); }
+        }
+      }
+      components.push(comp);
+    }
+
+    // BFS spanning tree per component
+    const parentMap = new Map<string, string | null>();
+    const spanEdges: [string, string][] = [];
+    for (const comp of components) {
+      const root = comp.reduce((best, id) => {
+        const bc = [...(adj.get(best) ?? [])].filter(n => comp.includes(n)).length;
+        const ic = [...(adj.get(id) ?? [])].filter(n => comp.includes(n)).length;
+        return ic > bc ? id : best;
+      });
+      parentMap.set(root, null);
+      const vis2 = new Set([root]);
+      const q2 = [root];
+      while (q2.length) {
+        const id = q2.shift()!;
+        for (const nb of adj.get(id) ?? []) {
+          if (!vis2.has(nb)) { vis2.add(nb); parentMap.set(nb, id); spanEdges.push([id, nb]); q2.push(nb); }
+        }
+      }
+    }
+
+    // d3.tree layout per component
+    type TN = { id: string; children: TN[] };
+    function buildTree(rootId: string): TN {
+      return { id: rootId, children: keywords.filter(k => parentMap.get(k.id) === rootId).map(k => buildTree(k.id)) };
+    }
+
+    const NODE_W = 140, NODE_H = 100;
+    const basePositions: Record<string, { x: number; y: number }> = {};
+    let xOffset = 0;
+    const isolated: string[] = [];
+
+    for (const comp of components) {
+      if (comp.length === 1) { isolated.push(comp[0]); continue; }
+      const rootId = comp.find(id => parentMap.get(id) === null)!;
+      const root = d3.hierarchy(buildTree(rootId));
+      d3.tree<TN>().nodeSize([NODE_W, NODE_H])(root);
+      let minX = Infinity, maxX = -Infinity;
+      root.each(n => { const nx = (n as any).x as number; if (nx < minX) minX = nx; if (nx > maxX) maxX = nx; });
+      root.each(n => {
+        basePositions[n.data.id] = { x: (n as any).x - minX + xOffset, y: (n as any).y + 60 };
+      });
+      xOffset += maxX - minX + NODE_W * 1.6;
+    }
+
+    // Isolated nodes in a column to the right
+    isolated.forEach((id, i) => {
+      basePositions[id] = { x: xOffset + NODE_W * 0.5, y: 60 + i * 80 };
+    });
+
+    return { nodes: keywords, edges: spanEdges, basePositions };
+  }, [keywords, bubbles]);
+
+  useEffect(() => { setOverrides({}); }, [keywords]);
+
+  function getPos(id: string) { return overrides[id] ?? basePositions[id] ?? { x: 0, y: 0 }; }
+
+  function onBgDown(e: React.MouseEvent) {
+    if (e.button !== 0) return;
+    panStartRef.current = { mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y };
+  }
+  function onNodeDown(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
+    const pos = getPos(id);
+    dragRef.current = { id, mx: e.clientX, my: e.clientY, ox: pos.x, oy: pos.y };
+  }
+  function onMove(e: React.MouseEvent<SVGSVGElement>) {
+    if (dragRef.current) {
+      const { id, mx, my, ox, oy } = dragRef.current;
+      setOverrides(p => ({ ...p, [id]: { x: ox + (e.clientX - mx) / zoom, y: oy + (e.clientY - my) / zoom } }));
+    } else if (panStartRef.current) {
+      const { mx, my, px, py } = panStartRef.current;
+      setPan({ x: px + e.clientX - mx, y: py + e.clientY - my });
+    }
+  }
+  function onUp() { dragRef.current = null; panStartRef.current = null; }
+
+  const isEmpty = !keywords.length || (!bubbles.filter(b => b.nodeType === "bold").length && !edges.length);
+
+  return (
+    <div className="relative w-full h-full overflow-hidden">
+      <svg
+        width={size.w} height={size.h} className="w-full h-full select-none"
+        onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
+        onWheel={(e) => { e.preventDefault(); setZoom(z => Math.min(3, Math.max(0.25, +(z * (e.deltaY < 0 ? 1.1 : 0.9)).toFixed(3)))); }}
+      >
+        <rect width={size.w} height={size.h} fill="transparent" style={{ cursor: "grab" }} onMouseDown={onBgDown} />
+        <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
+          {edges.map(([a, b]) => {
+            const pa = getPos(a), pb = getPos(b);
+            return (
+              <path
+                key={`${a}-${b}`}
+                d={`M${pa.x},${pa.y} C${pa.x},${(pa.y + pb.y) / 2} ${pb.x},${(pa.y + pb.y) / 2} ${pb.x},${pb.y}`}
+                fill="none"
+                stroke={dark ? "#52525b" : "#d4d4d8"}
+                strokeWidth={2}
+              />
+            );
+          })}
+          {nodes.map(kw => {
+            if (!basePositions[kw.id]) return null;
+            const { x, y } = getPos(kw.id);
+            const words = kw.text.split(" ");
+            const line1 = words.slice(0, Math.ceil(words.length / 2)).join(" ");
+            const line2 = words.slice(Math.ceil(words.length / 2)).join(" ");
+            return (
+              <g key={kw.id} transform={`translate(${x},${y})`} onMouseDown={(e) => onNodeDown(e, kw.id)} style={{ cursor: "grab" }}>
+                <circle r={32} fill={kw.color} fillOpacity={0.15} stroke={kw.color} strokeWidth={2} />
+                {line2 ? (
+                  <>
+                    <text textAnchor="middle" dominantBaseline="middle" fontSize={10} fontWeight={600} fill={kw.color} dy={-7}>{line1}</text>
+                    <text textAnchor="middle" dominantBaseline="middle" fontSize={10} fontWeight={600} fill={kw.color} dy={7}>{line2}</text>
+                  </>
+                ) : (
+                  <text textAnchor="middle" dominantBaseline="middle" fontSize={11} fontWeight={600} fill={kw.color}>{line1}</text>
+                )}
+              </g>
+            );
+          })}
+        </g>
+      </svg>
+
+      {isEmpty && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500 gap-2 pointer-events-none">
+          <p className="text-sm">No keyword connections yet</p>
+          <p className="text-xs">Keywords connect when bold text in a note contains both of them</p>
+        </div>
+      )}
+
+      <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm">
+        <button onClick={() => setZoom(z => Math.max(0.25, +(z - 0.1).toFixed(2)))} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none">−</button>
+        <input type="range" min={0.25} max={3} step={0.05} value={zoom} onChange={(e) => setZoom(+e.target.value)} className="w-24 accent-zinc-600 dark:accent-zinc-400 cursor-pointer" />
+        <button onClick={() => setZoom(z => Math.min(3, +(z + 0.1).toFixed(2)))} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none">+</button>
+        <span className="text-xs text-zinc-400 dark:text-zinc-500 w-8 text-right tabular-nums">{Math.round(zoom * 100)}%</span>
+        <button onClick={() => { setZoom(1); setPan({ x: 60, y: 60 }); setOverrides({}); }} className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors" title="Reset view">↺</button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ────────────────────────────────────────────────────────────────
 
 export default function DiagramPage() {
@@ -323,6 +517,7 @@ export default function DiagramPage() {
   const [selectedKwIds, setSelectedKwIds] = useState<Set<string>>(new Set());
   const selectedKwIdsRef = useRef<Set<string>>(new Set());
   const [tool, setTool] = useState<"hand" | "select">("hand");
+  const [activeTab, setActiveTab] = useState<"bubble" | "graph">("bubble");
   const toolRef = useRef<"hand" | "select">("hand");
   const [selRect, setSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const selStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -1379,7 +1574,25 @@ export default function DiagramPage() {
 
       {/* Canvas */}
       <main ref={containerRef} className="flex-1 relative overflow-hidden bg-zinc-100 dark:bg-zinc-900">
-        {(activeNote || allNotesMode) ? (
+        {/* Tab bar */}
+        <div className="absolute top-3 right-3 z-10 flex items-center gap-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-1 shadow-sm">
+          <button
+            onClick={() => setActiveTab("bubble")}
+            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${activeTab === "bubble" ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900" : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"}`}
+          >
+            Bubbles
+          </button>
+          <button
+            onClick={() => setActiveTab("graph")}
+            className={`px-3 py-1 rounded text-xs font-medium transition-colors ${activeTab === "graph" ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900" : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"}`}
+          >
+            Keyword Graph
+          </button>
+        </div>
+
+        {activeTab === "graph" ? (
+          <KeywordGraphView keywords={customKeywords} bubbles={bubbles} dark={dark} size={size} />
+        ) : (activeNote || allNotesMode) ? (
           <svg ref={svgRef} width={size.w} height={size.h} className="w-full h-full" />
         ) : (
           <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500 gap-2">
@@ -1388,8 +1601,8 @@ export default function DiagramPage() {
           </div>
         )}
 
-        {/* Tool switcher */}
-        <div className="absolute top-3 left-3 flex items-center gap-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-1 shadow-sm">
+        {/* Tool switcher — bubble tab only */}
+        {activeTab === "bubble" && <div className="absolute top-3 left-3 flex items-center gap-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-1 shadow-sm">
           <button
             onClick={() => setTool("hand")}
             title="Hand tool (pan)"
@@ -1408,10 +1621,10 @@ export default function DiagramPage() {
               <rect x="2" y="2" width="12" height="12" rx="1" strokeDasharray="3 2" />
             </svg>
           </button>
-        </div>
+        </div>}
 
-        {/* Marquee selection rect */}
-        {selRect && (
+        {/* Marquee selection rect — bubble tab only */}
+        {activeTab === "bubble" && selRect && (
           <svg className="absolute inset-0 w-full h-full pointer-events-none">
             <rect
               x={selRect.x} y={selRect.y}
@@ -1423,30 +1636,32 @@ export default function DiagramPage() {
             />
           </svg>
         )}
-        {/* Zoom slider */}
-        <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm">
-          <button
-            onClick={() => setZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
-            className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
-          >−</button>
-          <input
-            type="range"
-            min={0.25} max={3} step={0.05}
-            value={zoom}
-            onChange={(e) => setZoom(+e.target.value)}
-            className="w-24 accent-zinc-600 dark:accent-zinc-400 cursor-pointer"
-          />
-          <button
-            onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))}
-            className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
-          >+</button>
-          <span className="text-xs text-zinc-400 dark:text-zinc-500 w-8 text-right tabular-nums">{Math.round(zoom * 100)}%</span>
-          <button
-            onClick={() => setZoom(1)}
-            className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
-            title="Reset zoom"
-          >↺</button>
-        </div>
+        {/* Zoom slider — bubble tab only */}
+        {activeTab === "bubble" && (
+          <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm">
+            <button
+              onClick={() => setZoom((z) => Math.max(0.25, +(z - 0.1).toFixed(2)))}
+              className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
+            >−</button>
+            <input
+              type="range"
+              min={0.25} max={3} step={0.05}
+              value={zoom}
+              onChange={(e) => setZoom(+e.target.value)}
+              className="w-24 accent-zinc-600 dark:accent-zinc-400 cursor-pointer"
+            />
+            <button
+              onClick={() => setZoom((z) => Math.min(3, +(z + 0.1).toFixed(2)))}
+              className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none"
+            >+</button>
+            <span className="text-xs text-zinc-400 dark:text-zinc-500 w-8 text-right tabular-nums">{Math.round(zoom * 100)}%</span>
+            <button
+              onClick={() => setZoom(1)}
+              className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors"
+              title="Reset zoom"
+            >↺</button>
+          </div>
+        )}
       </main>
 
       {/* Right-click context menu */}
