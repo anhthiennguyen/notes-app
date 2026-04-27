@@ -21,6 +21,7 @@ export default function Home() {
   const [renamingId, setRenamingId] = useState<number | null>(null);
   const [renameVal, setRenameVal] = useState("");
   const [exportingId, setExportingId] = useState<number | null>(null);
+  const [exportingAll, setExportingAll] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string } | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
@@ -107,6 +108,27 @@ export default function Home() {
     }
   }
 
+  async function downloadAll() {
+    setExportingAll(true);
+    try {
+      const res = await fetch("/api/notebooks/export-all");
+      if (!res.ok) { alert("Export failed: " + await res.text().catch(() => res.statusText)); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "all-notebooks.zip";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Export error: " + err);
+    } finally {
+      setExportingAll(false);
+    }
+  }
+
   async function downloadKeywords(id: number, name: string) {
     try {
       const res = await fetch(`/api/diagram-keywords?notebookId=${id}`);
@@ -161,6 +183,14 @@ export default function Home() {
             title="Toggle dark mode"
           >
             {dark ? "☀" : "☾"}
+          </button>
+          <button
+            onClick={downloadAll}
+            disabled={exportingAll}
+            className="text-sm border border-zinc-300 dark:border-zinc-600 rounded px-3 py-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-300 disabled:opacity-50 disabled:cursor-wait"
+            title="Download all notebooks as PDF, DOCX and keywords"
+          >
+            {exportingAll ? "Exporting…" : "Download All"}
           </button>
           <button
             onClick={createNotebook}

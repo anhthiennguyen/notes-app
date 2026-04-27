@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useTheme } from "@/lib/theme";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useEditor, EditorContent, NodeViewWrapper, ReactNodeViewRenderer } from "@tiptap/react";
+import { createPortal } from "react-dom";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { TextStyle, FontSize } from "@tiptap/extension-text-style";
@@ -14,7 +15,7 @@ import { DrawingBlock } from "@/lib/drawing-block";
 import { CustomCodeBlock } from "@/lib/code-block";
 import Image from "@tiptap/extension-image";
 import Youtube from "@tiptap/extension-youtube";
-import { mergeAttributes } from "@tiptap/core";
+import { mergeAttributes, nodeInputRule } from "@tiptap/core";
 import FileViewer from "@/components/FileViewer";
 import ConfirmModal from "@/components/ConfirmModal";
 
@@ -481,8 +482,9 @@ function TableOfContents({
 
 // ── Links panel ──────────────────────────────────────────────────────────────
 
-function getYoutubeVideoId(src: string): string | null {
-  const match = src.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+function getYoutubeVideoId(src: string | null | undefined): string | null {
+  if (!src) return null;
+  const match = src.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/);
   return match ? match[1] : null;
 }
 
@@ -544,6 +546,104 @@ function LinksPanel({ editor }: { editor: ReturnType<typeof useEditor> | null })
         </ul>
       )}
     </div>
+  );
+}
+
+// ── YouTube node view ────────────────────────────────────────────────────────
+
+function YoutubeNodeView({ node, updateAttributes }: {
+  node: { attrs: { src: string } };
+  updateAttributes: (attrs: Record<string, any>) => void;
+}) {
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editUrl, setEditUrl] = useState("");
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    function dismiss() { setCtxMenu(null); }
+    document.addEventListener("mousedown", dismiss);
+    return () => document.removeEventListener("mousedown", dismiss);
+  }, [ctxMenu]);
+
+  useEffect(() => {
+    if (editing) setTimeout(() => { editInputRef.current?.focus(); editInputRef.current?.select(); }, 0);
+  }, [editing]);
+
+  function submit() {
+    const url = editUrl.trim();
+    if (url) updateAttributes({ src: url });
+    setEditing(false);
+  }
+
+  const videoId = getYoutubeVideoId(node.attrs.src);
+  const embedSrc = videoId ? `https://www.youtube.com/embed/${videoId}` : "";
+
+  return (
+    <NodeViewWrapper>
+      <div style={{ position: "relative", display: "inline-block", maxWidth: "100%" }}>
+        <div
+          ref={overlayRef}
+          style={{ position: "absolute", inset: 0, zIndex: 1 }}
+          onMouseDown={(e) => {
+            if (e.button !== 0 || !overlayRef.current) return;
+            overlayRef.current.style.pointerEvents = "none";
+            setTimeout(() => { if (overlayRef.current) overlayRef.current.style.pointerEvents = ""; }, 300);
+          }}
+          onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
+        />
+        {embedSrc && (
+          <iframe src={embedSrc} width={640} height={360} frameBorder="0"
+            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture" allowFullScreen />
+        )}
+      </div>
+
+      {ctxMenu && createPortal(
+        <div
+          className="fixed z-[9999] bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded shadow-lg overflow-hidden"
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            className="w-full text-left px-4 py-2 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200 whitespace-nowrap"
+            onClick={() => { setEditUrl(node.attrs.src); setEditing(true); setCtxMenu(null); }}
+          >
+            Edit link
+          </button>
+        </div>,
+        document.body
+      )}
+
+      {editing && createPortal(
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.2)" }}
+          onMouseDown={() => setEditing(false)}
+        >
+          <div
+            className="bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-600 rounded-lg shadow-xl p-4 w-96"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <p className="text-sm font-medium text-zinc-700 dark:text-zinc-200 mb-2">YouTube URL</p>
+            <input
+              ref={editInputRef}
+              value={editUrl}
+              onChange={(e) => setEditUrl(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") submit(); if (e.key === "Escape") setEditing(false); }}
+              className="w-full border border-zinc-300 dark:border-zinc-600 rounded px-3 py-2 text-sm bg-white dark:bg-zinc-900 dark:text-zinc-100 outline-none mb-3"
+              placeholder="https://www.youtube.com/watch?v=..."
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setEditing(false)} className="px-3 py-1.5 text-sm border border-zinc-300 dark:border-zinc-600 rounded hover:bg-zinc-100 dark:hover:bg-zinc-700 dark:text-zinc-200">Cancel</button>
+              <button onClick={submit} className="px-3 py-1.5 text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded hover:bg-zinc-700 dark:hover:bg-zinc-300">Update</button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </NodeViewWrapper>
   );
 }
 
@@ -625,6 +725,18 @@ export default function NotebookPage() {
         renderHTML({ HTMLAttributes }) {
           if (!HTMLAttributes.src) return ["div", {}];
           return ["div", { "data-youtube-video": "" }, ["iframe", mergeAttributes(this.options.HTMLAttributes, HTMLAttributes)]];
+        },
+        addNodeView() {
+          return ReactNodeViewRenderer(YoutubeNodeView as any);
+        },
+        addInputRules() {
+          return [
+            nodeInputRule({
+              find: /(https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)[\w\-?=&#%+./]+)\s$/,
+              type: this.type,
+              getAttributes: (match) => ({ src: match[1] }),
+            }),
+          ];
         },
       }).configure({ width: 640, height: 360, autoplay: false, addPasteHandler: true }),
     ],
