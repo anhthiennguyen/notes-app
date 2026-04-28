@@ -83,19 +83,29 @@ export async function buildPdf(title: string, content: string): Promise<Buffer> 
     doc.fontSize(24).font("Helvetica-Bold").text(title, { paragraphGap: 8 });
     doc.moveDown(0.5);
 
+    const contentWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
+
     for (const block of parseHtmlForExport(content)) {
       if (block.tag === "drawing" && block.drawingData) {
         try {
           const base64 = block.drawingData.split(",")[1];
           const imgBuf = Buffer.from(base64, "base64");
-          const imgWidth = doc.page.width - doc.page.margins.left - doc.page.margins.right;
           const imgHeight = Math.min(block.drawingHeight ?? 200, 400);
           doc.moveDown(0.4);
-          doc.image(imgBuf, { width: imgWidth, height: imgHeight });
+          doc.image(imgBuf, { width: contentWidth, height: imgHeight });
           doc.moveDown(0.4);
-        } catch {
-          // Skip malformed drawing data
-        }
+        } catch { /* skip malformed */ }
+        continue;
+      }
+
+      if (block.tag === "image" && block.imageSrc) {
+        try {
+          const base64 = block.imageSrc.split(",")[1];
+          const imgBuf = Buffer.from(base64, "base64");
+          doc.moveDown(0.4);
+          doc.image(imgBuf, { fit: [contentWidth, 500] });
+          doc.moveDown(0.4);
+        } catch { /* skip malformed */ }
         continue;
       }
       const heading = PDF_HEADING[block.tag];
@@ -155,27 +165,47 @@ export async function buildDocx(title: string, content: string): Promise<Buffer>
     new Paragraph({ text: title, heading: HeadingLevel.HEADING_1, spacing: { after: 240 } }),
   ];
 
+  const PAGE_WIDTH_PT = 6 * 72; // 6 inches in points
+
   for (const block of parseHtmlForExport(content)) {
     if (block.tag === "drawing" && block.drawingData) {
       try {
         const base64 = block.drawingData.split(",")[1];
         const imgBuf = Buffer.from(base64, "base64");
         const heightEmu = Math.round(((block.drawingHeight ?? 200) / 96) * 914400);
-        const widthEmu = Math.round((6 * 914400)); // ~6 inches
-        bodyChildren.push(
-          new Paragraph({
-            children: [
-              new ImageRun({ data: imgBuf, transformation: { width: widthEmu / 9144, height: heightEmu / 9144 }, type: "png" }),
-            ],
-            spacing: { after: 120 },
-          })
-        );
-      } catch {
-        // Skip malformed drawing data
-      }
-    } else {
-      bodyChildren.push(blockToDocxParagraph(block));
+        const widthEmu = Math.round(6 * 914400);
+        bodyChildren.push(new Paragraph({
+          children: [new ImageRun({ data: imgBuf, transformation: { width: widthEmu / 9144, height: heightEmu / 9144 }, type: "png" })],
+          spacing: { after: 120 },
+        }));
+      } catch { /* skip malformed */ }
+      continue;
     }
+
+    if (block.tag === "image" && block.imageSrc) {
+      try {
+        const [, base64] = block.imageSrc.split(",");
+        const mimeMatch = block.imageSrc.match(/^data:image\/(\w+);/);
+        const rawType = mimeMatch?.[1] ?? "png";
+        const type = (rawType === "jpeg" ? "jpg" : rawType) as "png" | "jpg" | "gif" | "bmp";
+        const imgBuf = Buffer.from(base64, "base64");
+        // Scale to fit page width, preserve aspect ratio if dimensions known
+        let w = PAGE_WIDTH_PT;
+        let h = PAGE_WIDTH_PT * 0.6; // default ~60% ratio
+        if (block.imageWidth && block.imageHeight) {
+          const ratio = block.imageHeight / block.imageWidth;
+          w = Math.min(PAGE_WIDTH_PT, block.imageWidth);
+          h = Math.round(w * ratio);
+        }
+        bodyChildren.push(new Paragraph({
+          children: [new ImageRun({ data: imgBuf, transformation: { width: w, height: h }, type })],
+          spacing: { after: 120 },
+        }));
+      } catch { /* skip malformed */ }
+      continue;
+    }
+
+    bodyChildren.push(blockToDocxParagraph(block));
   }
 
   return Packer.toBuffer(new Document({ sections: [{ children: bodyChildren }] }));

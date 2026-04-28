@@ -5,10 +5,13 @@ export interface Run {
 }
 
 export interface Block {
-  tag: string; // h1–h6, p, li, drawing
+  tag: string; // h1–h6, p, li, drawing, image
   runs: Run[];
-  drawingData?: string; // base64 PNG data URL for drawing blocks
+  drawingData?: string; // base64 data URL for drawing blocks
   drawingHeight?: number;
+  imageSrc?: string;    // base64 data URL for img blocks
+  imageWidth?: number;  // pixel dimensions from img attributes, if present
+  imageHeight?: number;
 }
 
 function decodeEntities(s: string): string {
@@ -60,6 +63,27 @@ export function parseHtmlForExport(html: string): Block[] {
   const matches: RawMatch[] = [];
 
   let m: RegExpExecArray | null;
+
+  // Inline images (<img src="data:...">)
+  const imgRe = /<img[^>]+src="([^"]*)"[^>]*/gi;
+  while ((m = imgRe.exec(html)) !== null) {
+    const src = m[1];
+    if (!src) continue;
+    const tag = m[0];
+    const wMatch = tag.match(/width="(\d+)"/);
+    const hMatch = tag.match(/height="(\d+)"/);
+    matches.push({
+      index: m.index,
+      end: m.index + m[0].length,
+      block: {
+        tag: "image",
+        runs: [],
+        imageSrc: src,
+        imageWidth: wMatch ? parseInt(wMatch[1], 10) : undefined,
+        imageHeight: hMatch ? parseInt(hMatch[1], 10) : undefined,
+      },
+    });
+  }
 
   // Drawing blocks
   while ((m = drawingRe.exec(html)) !== null) {
