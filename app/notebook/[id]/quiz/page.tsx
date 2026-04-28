@@ -19,7 +19,7 @@ type ScoreMap = Record<string, CardScore>;
 
 type ContextMenu = { x: number; y: number; item: QuizItem };
 
-function drawingBlocksToImages(html: string): string {
+function processAnswerHtml(html: string): string {
   const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
   doc.querySelectorAll('div[data-type="drawing-block"]').forEach((block) => {
     const data = block.getAttribute("data-drawing") ?? "";
@@ -33,6 +33,17 @@ function drawingBlocksToImages(html: string): string {
     } else {
       block.remove();
     }
+  });
+  doc.querySelectorAll('div[data-youtube-video]').forEach((block) => {
+    const src = block.querySelector("iframe")?.getAttribute("src") ?? "";
+    const id = src.match(/\/embed\/([A-Za-z0-9_-]{11})/)?.[1];
+    const url = id ? `https://www.youtube.com/watch?v=${id}` : src;
+    const a = doc.createElement("a");
+    a.href = url;
+    a.textContent = url;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    block.replaceWith(a);
   });
   return (doc.body.firstElementChild as HTMLElement)?.innerHTML ?? "";
 }
@@ -71,7 +82,7 @@ function parseQuizItems(html: string): QuizItem[] {
       j++;
     }
     const rawAnswer = inlineHtml || answerParts.join("");
-    const answer = drawingBlocksToImages(rawAnswer);
+    const answer = processAnswerHtml(rawAnswer);
     items.push({ id: `q${idx++}`, question, answer });
     i = answerParts.length > 0 ? j : i + 1;
   }
