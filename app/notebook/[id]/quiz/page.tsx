@@ -19,6 +19,24 @@ type ScoreMap = Record<string, CardScore>;
 
 type ContextMenu = { x: number; y: number; item: QuizItem };
 
+function drawingBlocksToImages(html: string): string {
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  doc.querySelectorAll('div[data-type="drawing-block"]').forEach((block) => {
+    const data = block.getAttribute("data-drawing") ?? "";
+    const height = block.getAttribute("data-height") ?? "200";
+    if (data) {
+      const img = doc.createElement("img");
+      img.src = data;
+      img.style.cssText = `max-width:100%;height:auto;max-height:${height}px;`;
+      img.className = "rounded border border-zinc-200";
+      block.replaceWith(img);
+    } else {
+      block.remove();
+    }
+  });
+  return (doc.body.firstElementChild as HTMLElement)?.innerHTML ?? "";
+}
+
 function parseQuizItems(html: string): QuizItem[] {
   if (typeof window === "undefined") return [];
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -35,22 +53,27 @@ function parseQuizItems(html: string): QuizItem[] {
     if (!question) { i++; continue; }
 
     const boldSet = new Set(boldEls);
-    const inline = [...el.childNodes]
+    const inlineHtml = [...el.childNodes]
       .filter((c) => !boldSet.has(c as Element))
-      .map((c) => c.textContent ?? "")
+      .map((c) => c.nodeType === 3 ? (c.textContent ?? "") : (c as Element).outerHTML)
       .join("")
       .trim();
 
-    const answerLines: string[] = [];
+    const answerParts: string[] = [];
     let j = i + 1;
     while (j < children.length && children[j].querySelectorAll("strong, b").length === 0) {
-      const t = children[j].textContent?.trim() ?? "";
-      if (t) answerLines.push(t);
+      const child = children[j];
+      const richSelector = "img, [data-type='drawing-block'], [data-youtube-video]";
+      const hasContent = child.textContent?.trim() ||
+        child.matches(richSelector) ||
+        child.querySelector(richSelector);
+      if (hasContent) answerParts.push(child.outerHTML);
       j++;
     }
-    const answer = inline || answerLines.join("\n");
+    const rawAnswer = inlineHtml || answerParts.join("");
+    const answer = drawingBlocksToImages(rawAnswer);
     items.push({ id: `q${idx++}`, question, answer });
-    i = answerLines.length > 0 ? j : i + 1;
+    i = answerParts.length > 0 ? j : i + 1;
   }
   return items;
 }
@@ -383,7 +406,10 @@ export default function QuizPage() {
                     {revealed[item.id] ? "Hide answer" : "Show answer"}
                   </button>
                   {revealed[item.id] && (
-                    <p className="mt-3 text-sm text-zinc-700 dark:text-zinc-300 border-l-2 border-zinc-300 dark:border-zinc-600 pl-3 whitespace-pre-wrap">{item.answer}</p>
+                    <div
+                      className="mt-3 text-sm text-zinc-700 dark:text-zinc-300 border-l-2 border-zinc-300 dark:border-zinc-600 pl-3 prose prose-sm dark:prose-invert max-w-none"
+                      dangerouslySetInnerHTML={{ __html: item.answer }}
+                    />
                   )}
                 </div>
               </div>
@@ -440,9 +466,10 @@ export default function QuizPage() {
                 </button>
               ) : (
                 <>
-                  <p className="text-sm text-zinc-700 dark:text-zinc-300 border-l-2 border-zinc-300 dark:border-zinc-600 pl-4 whitespace-pre-wrap">
-                    {currentCard.answer}
-                  </p>
+                  <div
+                    className="text-sm text-zinc-700 dark:text-zinc-300 border-l-2 border-zinc-300 dark:border-zinc-600 pl-4 prose prose-sm dark:prose-invert max-w-none"
+                    dangerouslySetInnerHTML={{ __html: currentCard.answer }}
+                  />
                   <div className="flex gap-3 mt-1">
                     <button onClick={handleGotIt} className="flex-1 text-sm bg-green-600 hover:bg-green-700 text-white rounded-lg px-4 py-2 transition-colors font-medium">
                       ✓ Got it
