@@ -5,13 +5,14 @@ export interface Run {
 }
 
 export interface Block {
-  tag: string; // h1–h6, p, li, drawing, image
+  tag: string; // h1–h6, p, li, drawing, image, youtube
   runs: Run[];
   drawingData?: string; // base64 data URL for drawing blocks
   drawingHeight?: number;
   imageSrc?: string;    // base64 data URL for img blocks
   imageWidth?: number;  // pixel dimensions from img attributes, if present
   imageHeight?: number;
+  youtubeUrl?: string;  // watch URL for youtube blocks
 }
 
 function decodeEntities(s: string): string {
@@ -63,6 +64,21 @@ export function parseHtmlForExport(html: string): Block[] {
   const matches: RawMatch[] = [];
 
   let m: RegExpExecArray | null;
+
+  // YouTube embeds (<div data-youtube-video=""><iframe src="...embed/ID...">)
+  const youtubeRe = /<div[^>]+data-youtube-video[^>]*>[\s\S]*?<iframe[^>]+src="([^"]*)"[^>]*>/gi;
+  while ((m = youtubeRe.exec(html)) !== null) {
+    const embedSrc = m[1];
+    const idMatch = embedSrc.match(/\/embed\/([A-Za-z0-9_-]{11})/);
+    const watchUrl = idMatch
+      ? `https://www.youtube.com/watch?v=${idMatch[1]}`
+      : embedSrc;
+    matches.push({
+      index: m.index,
+      end: m.index + m[0].length,
+      block: { tag: "youtube", runs: [], youtubeUrl: watchUrl },
+    });
+  }
 
   // Inline images (<img src="data:...">)
   const imgRe = /<img[^>]+src="([^"]*)"[^>]*/gi;

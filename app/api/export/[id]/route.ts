@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import PDFDocument from "pdfkit";
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, ImageRun } from "docx";
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, ImageRun, ExternalHyperlink } from "docx";
 import { parseHtmlForExport, type Block, type Run } from "@/lib/parse-html-for-export";
 
 export async function GET(
@@ -108,6 +108,15 @@ export async function buildPdf(title: string, content: string): Promise<Buffer> 
         } catch { /* skip malformed */ }
         continue;
       }
+
+      if (block.tag === "youtube" && block.youtubeUrl) {
+        doc.moveDown(0.2);
+        doc.fontSize(11).font("Helvetica").fillColor("blue")
+          .text(block.youtubeUrl, { link: block.youtubeUrl, underline: true });
+        doc.fillColor("black");
+        doc.moveDown(0.2);
+        continue;
+      }
       const heading = PDF_HEADING[block.tag];
       const isEmpty = block.runs.every((r) => !r.text.trim());
       if (heading) {
@@ -202,6 +211,19 @@ export async function buildDocx(title: string, content: string): Promise<Buffer>
           spacing: { after: 120 },
         }));
       } catch { /* skip malformed */ }
+      continue;
+    }
+
+    if (block.tag === "youtube" && block.youtubeUrl) {
+      bodyChildren.push(new Paragraph({
+        children: [
+          new ExternalHyperlink({
+            link: block.youtubeUrl,
+            children: [new TextRun({ text: block.youtubeUrl, style: "Hyperlink" })],
+          }),
+        ],
+        spacing: { after: 120 },
+      }));
       continue;
     }
 
