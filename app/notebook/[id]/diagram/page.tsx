@@ -323,9 +323,9 @@ function KeywordGraphView({
   const graphSelStartRef = useRef<{ x: number; y: number } | null>(null);
   const containerDivRef = useRef<HTMLDivElement>(null);
   const allNotesModeRef = useRef(allNotesMode);
+  allNotesModeRef.current = allNotesMode; // sync every render — no stale ref in event handlers
 
   useEffect(() => { graphToolRef.current = graphTool; }, [graphTool]);
-  useEffect(() => { allNotesModeRef.current = allNotesMode; }, [allNotesMode]);
 
   function edgeKey(a: string, b: string) { return [a, b].sort().join("::"); }
 
@@ -482,11 +482,11 @@ function KeywordGraphView({
       fetch(`/api/diagram-graph?notebookId=${notebookId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ manualEdges: me, edgeLabels: el, nodePositions: allNotesMode ? np : undefined }),
+        body: JSON.stringify({ manualEdges: me, edgeLabels: el, nodePositions: allNotesModeRef.current ? np : undefined }),
       }).catch(() => {});
     }, 1500);
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [manualEdges, edgeLabels, overrides, notebookId, allNotesMode]);
+  }, [manualEdges, edgeLabels, overrides, notebookId]);
 
   // Remove edges/labels for deleted nodes
   useEffect(() => {
