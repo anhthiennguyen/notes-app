@@ -23,9 +23,13 @@ export default function Home() {
   const [exportingId, setExportingId] = useState<number | null>(null);
   const [exportingAll, setExportingAll] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string } | null>(null);
+  const [newMenuOpen, setNewMenuOpen] = useState(false);
+  const [importing, setImporting] = useState<{ done: number; total: number } | null>(null);
   const renameRef = useRef<HTMLInputElement>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const coverTargetId = useRef<number | null>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const newMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchNotebooks();
@@ -34,6 +38,17 @@ export default function Home() {
   useEffect(() => {
     if (renamingId !== null) renameRef.current?.focus();
   }, [renamingId]);
+
+  useEffect(() => {
+    if (!newMenuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (newMenuRef.current && !newMenuRef.current.contains(e.target as Node)) {
+        setNewMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [newMenuOpen]);
 
 
   async function fetchNotebooks() {
@@ -50,6 +65,34 @@ export default function Home() {
     await fetchNotebooks();
     setRenamingId(nb.id);
     setRenameVal("Untitled Notebook");
+  }
+
+  async function importFolder(files: FileList) {
+    const docxFiles = Array.from(files).filter((f) => f.name.endsWith(".docx"));
+    if (docxFiles.length === 0) return;
+
+    const folderName = docxFiles[0].webkitRelativePath.split("/")[0] || "Imported Notebook";
+
+    const res = await fetch("/api/notebooks", { method: "POST" });
+    const nb: Notebook = await res.json();
+    await fetch(`/api/notebooks/${nb.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: folderName }),
+    });
+
+    setImporting({ done: 0, total: docxFiles.length });
+    for (let i = 0; i < docxFiles.length; i++) {
+      const body = new FormData();
+      body.append("file", docxFiles[i]);
+      body.append("notebookId", String(nb.id));
+      await fetch("/api/import", { method: "POST", body });
+      setImporting({ done: i + 1, total: docxFiles.length });
+    }
+
+    setImporting(null);
+    await fetchNotebooks();
+    router.push(`/notebook/${nb.id}`);
   }
 
   async function renameNotebook(id: number) {
@@ -172,6 +215,19 @@ export default function Home() {
           e.target.value = "";
         }}
       />
+      {/* Hidden folder input for import */}
+      <input
+        ref={folderInputRef}
+        type="file"
+        className="hidden"
+        // @ts-expect-error webkitdirectory is not in the standard types
+        webkitdirectory=""
+        multiple
+        onChange={(e) => {
+          if (e.target.files?.length) importFolder(e.target.files);
+          e.target.value = "";
+        }}
+      />
 
       {/* Header */}
       <header className="px-10 py-6 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800">
@@ -192,12 +248,31 @@ export default function Home() {
           >
             {exportingAll ? "Exporting…" : "Download All"}
           </button>
-          <button
-            onClick={createNotebook}
-            className="text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded px-4 py-1.5 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
-          >
-            + New Notebook
-          </button>
+          <div ref={newMenuRef} className="relative">
+            <button
+              onClick={() => setNewMenuOpen((o) => !o)}
+              disabled={!!importing}
+              className="text-sm bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded px-4 py-1.5 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-wait"
+            >
+              {importing ? `Importing… ${importing.done}/${importing.total}` : "+ New Notebook"}
+            </button>
+            {newMenuOpen && (
+              <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded shadow-lg z-50 overflow-hidden">
+                <button
+                  onClick={() => { setNewMenuOpen(false); createNotebook(); }}
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-100"
+                >
+                  New Notebook
+                </button>
+                <button
+                  onClick={() => { setNewMenuOpen(false); folderInputRef.current?.click(); }}
+                  className="w-full text-left px-4 py-2.5 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-100"
+                >
+                  Import Folder
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

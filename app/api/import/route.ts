@@ -89,10 +89,16 @@ export async function POST(req: NextRequest) {
           const style = paraStyles[paraIndex++];
 
           // Preserve empty paragraphs — mammoth drops them otherwise.
-          const hasText = (p.children ?? []).some(
-            (c: any) => c.type === "run" && c.children?.some((t: any) => t.type === "text" && t.value)
+          // Also treat image-only paragraphs as having content so we don't erase them.
+          const hasContent = (p.children ?? []).some(
+            (c: any) =>
+              c.type === "image" ||
+              (c.type === "run" &&
+                c.children?.some(
+                  (t: any) => (t.type === "text" && t.value) || t.type === "image"
+                ))
           );
-          if (!hasText && p.numbering == null) {
+          if (!hasContent && p.numbering == null) {
             return {
               ...p,
               children: [{
