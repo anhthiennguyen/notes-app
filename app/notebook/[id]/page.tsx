@@ -15,7 +15,7 @@ import { DrawingBlock } from "@/lib/drawing-block";
 import { CustomCodeBlock } from "@/lib/code-block";
 import Image from "@tiptap/extension-image";
 import Youtube from "@tiptap/extension-youtube";
-import { mergeAttributes, nodeInputRule } from "@tiptap/core";
+import { mergeAttributes, nodeInputRule, nodePasteRule } from "@tiptap/core";
 import FileViewer from "@/components/FileViewer";
 import ConfirmModal from "@/components/ConfirmModal";
 
@@ -740,7 +740,16 @@ export default function NotebookPage() {
             }),
           ];
         },
-      }).configure({ width: 640, height: 360, autoplay: false, addPasteHandler: true }),
+        addPasteRules() {
+          return [
+            nodePasteRule({
+              find: /https?:\/\/(?:www\.)?(?:youtube\.com\/(?:watch\?v=|shorts\/)|youtu\.be\/)[\w\-?=&#%+./]+/g,
+              type: this.type,
+              getAttributes: (match) => ({ src: match[0] }),
+            }),
+          ];
+        },
+      }).configure({ width: 640, height: 360, autoplay: false, addPasteHandler: false }),
     ],
     content: "",
     onUpdate({ editor }) {
