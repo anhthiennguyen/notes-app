@@ -438,7 +438,6 @@ function KeywordGraphView({
     return { nodes: allNodes, edges: spanEdges, kwCatPairs, basePositions };
   }, [keywords, categories, bubbles]);
 
-  useEffect(() => { setOverrides({}); }, [keywords, categories]);
 
   // Load graph edges from DB on mount; migrate from localStorage if DB is empty
   const graphLoadedRef = useRef(false);
@@ -447,11 +446,10 @@ function KeywordGraphView({
     graphLoadedRef.current = true;
     fetch(`/api/diagram-graph?notebookId=${notebookId}`)
       .then(r => r.json())
-      .then(({ manualEdges: me, edgeLabels: el }) => {
+      .then(({ manualEdges: me, edgeLabels: el, nodePositions: np }) => {
         if (me?.length) {
           setManualEdges(me);
         } else {
-          // Migrate from localStorage if present
           const stored = localStorage.getItem(`graph-manual-edges-${notebookId}`);
           if (stored) { try { setManualEdges(JSON.parse(stored)); } catch {} }
         }
@@ -461,27 +459,30 @@ function KeywordGraphView({
           const stored = localStorage.getItem(`graph-edge-labels-${notebookId}`);
           if (stored) { try { setEdgeLabels(JSON.parse(stored)); } catch {} }
         }
+        if (np && Object.keys(np).length) {
+          setOverrides(np);
+        }
       })
       .catch(() => {});
   }, [notebookId]);
 
   // Debounced save to DB when edges or labels change
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSaveRef = useRef({ manualEdges, edgeLabels });
-  useEffect(() => { pendingSaveRef.current = { manualEdges, edgeLabels }; }, [manualEdges, edgeLabels]);
+  const pendingSaveRef = useRef({ manualEdges, edgeLabels, nodePositions: overrides });
+  useEffect(() => { pendingSaveRef.current = { manualEdges, edgeLabels, nodePositions: overrides }; }, [manualEdges, edgeLabels, overrides]);
   useEffect(() => {
     if (!graphLoadedRef.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      const { manualEdges: me, edgeLabels: el } = pendingSaveRef.current;
+      const { manualEdges: me, edgeLabels: el, nodePositions: np } = pendingSaveRef.current;
       fetch(`/api/diagram-graph?notebookId=${notebookId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ manualEdges: me, edgeLabels: el }),
+        body: JSON.stringify({ manualEdges: me, edgeLabels: el, nodePositions: np }),
       }).catch(() => {});
     }, 1500);
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [manualEdges, edgeLabels, notebookId]);
+  }, [manualEdges, edgeLabels, overrides, notebookId]);
 
   // Remove edges/labels for deleted nodes
   useEffect(() => {

@@ -16,8 +16,9 @@ model Notebook {
   notes             Note[]
   diagramKeywords   DiagramKeyword[]
   categories        Category[]
-  graphManualEdges  String           @default("[]")
-  graphEdgeLabels   String           @default("{}")
+  graphManualEdges     String           @default("[]")
+  graphEdgeLabels      String           @default("{}")
+  graphNodePositions   String           @default("{}")
 }
 
 model Category {
