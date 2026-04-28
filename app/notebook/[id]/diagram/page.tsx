@@ -296,6 +296,7 @@ function KeywordGraphView({
   dark,
   size,
   notebookId,
+  allNotesMode,
 }: {
   keywords: CustomKeyword[];
   categories: CategoryData[];
@@ -303,6 +304,7 @@ function KeywordGraphView({
   dark: boolean;
   size: { w: number; h: number };
   notebookId: number;
+  allNotesMode: boolean;
 }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 60, y: 60 });
@@ -478,11 +480,11 @@ function KeywordGraphView({
       fetch(`/api/diagram-graph?notebookId=${notebookId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ manualEdges: me, edgeLabels: el, nodePositions: np }),
+        body: JSON.stringify({ manualEdges: me, edgeLabels: el, nodePositions: allNotesMode ? np : undefined }),
       }).catch(() => {});
     }, 1500);
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [manualEdges, edgeLabels, overrides, notebookId]);
+  }, [manualEdges, edgeLabels, overrides, notebookId, allNotesMode]);
 
   // Remove edges/labels for deleted nodes
   useEffect(() => {
@@ -1971,7 +1973,7 @@ export default function DiagramPage() {
         </div>
 
         {activeTab === "graph" ? (
-          <KeywordGraphView keywords={customKeywords} categories={categories} bubbles={bubbles} dark={dark} size={size} notebookId={notebookId} />
+          <KeywordGraphView keywords={customKeywords} categories={categories} bubbles={bubbles} dark={dark} size={size} notebookId={notebookId} allNotesMode={allNotesMode} />
         ) : (activeNote || allNotesMode) ? (
           <svg ref={svgRef} width={size.w} height={size.h} className="w-full h-full" />
         ) : (
