@@ -656,6 +656,7 @@ export default function NotebookPage() {
   const { dark, toggle: toggleTheme } = useTheme();
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [noteSearch, setNoteSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<(NoteMeta & { snippet: string })[] | null>(null);
   const [pendingScroll, setPendingScroll] = useState<string | null>(null);
   const [pendingNoteId, setPendingNoteId] = useState<number | null>(null);
   const [activeNote, setActiveNote] = useState<Note | null>(null);
@@ -876,6 +877,17 @@ export default function NotebookPage() {
     return list as NoteMeta[];
   }
 
+  useEffect(() => {
+    const q = noteSearch.trim();
+    if (!q) { setSearchResults(null); return; }
+    const timer = setTimeout(async () => {
+      const res = await fetch(`/api/notes?notebookId=${notebookId}&search=${encodeURIComponent(q)}`);
+      const data = await res.json();
+      setSearchResults(Array.isArray(data) ? data : []);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [noteSearch, notebookId]);
+
   async function openNote(id: number) {
     const res = await fetch(`/api/notes/${id}`);
     const note: Note = await res.json();
@@ -1077,53 +1089,71 @@ export default function NotebookPage() {
             className="w-full text-sm px-2 py-1.5 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:text-zinc-200 placeholder-zinc-400 dark:placeholder-zinc-500 outline-none focus:border-zinc-500 dark:focus:border-zinc-400"
           />
         </div>
-        <ul className="flex-1 overflow-y-auto">
-          {notes.filter(n => !noteSearch || (n.title || "Untitled").toLowerCase().includes(noteSearch.toLowerCase())).map((note) => (
-            <li
-              key={note.id}
-              onClick={() => renamingNoteId !== note.id && openNote(note.id)}
-              className={`group flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 ${
-                activeNote?.id === note.id ? "bg-zinc-200 dark:bg-zinc-700" : ""
-              }`}
-            >
-              {renamingNoteId === note.id ? (
-                <input
-                  autoFocus
-                  value={renameVal}
-                  onChange={(e) => setRenameVal(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitRename(note.id);
-                    if (e.key === "Escape") setRenamingNoteId(null);
-                    e.stopPropagation();
-                  }}
-                  onBlur={() => commitRename(note.id)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="text-sm flex-1 bg-transparent outline-none border-b border-zinc-400 dark:border-zinc-500 dark:text-zinc-100 min-w-0"
-                />
-              ) : (
-                <span
-                  className="text-sm truncate flex-1 dark:text-zinc-200"
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    setRenamingNoteId(note.id);
-                    setRenameVal(note.title || "Untitled");
-                  }}
-                >
-                  {note.title || "Untitled"}
-                </span>
-              )}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDeleteNoteConfirm(note.id);
-                }}
-                className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500 ml-2 text-xs transition-opacity"
+        {searchResults !== null ? (
+          <ul className="flex-1 overflow-y-auto">
+            {searchResults.length === 0 && (
+              <li className="px-3 py-4 text-sm text-zinc-400 dark:text-zinc-500 text-center">No results</li>
+            )}
+            {searchResults.map((note) => (
+              <li
+                key={note.id}
+                onClick={() => openNote(note.id)}
+                className={`px-3 py-2 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 ${activeNote?.id === note.id ? "bg-zinc-200 dark:bg-zinc-700" : ""}`}
               >
-                ✕
-              </button>
-            </li>
-          ))}
-        </ul>
+                <div className="text-sm font-medium truncate dark:text-zinc-200">{note.title || "Untitled"}</div>
+                <div className="text-xs text-zinc-400 dark:text-zinc-500 mt-0.5 line-clamp-2 leading-snug">{note.snippet}</div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <ul className="flex-1 overflow-y-auto">
+            {notes.map((note) => (
+              <li
+                key={note.id}
+                onClick={() => renamingNoteId !== note.id && openNote(note.id)}
+                className={`group flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-700 ${
+                  activeNote?.id === note.id ? "bg-zinc-200 dark:bg-zinc-700" : ""
+                }`}
+              >
+                {renamingNoteId === note.id ? (
+                  <input
+                    autoFocus
+                    value={renameVal}
+                    onChange={(e) => setRenameVal(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitRename(note.id);
+                      if (e.key === "Escape") setRenamingNoteId(null);
+                      e.stopPropagation();
+                    }}
+                    onBlur={() => commitRename(note.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-sm flex-1 bg-transparent outline-none border-b border-zinc-400 dark:border-zinc-500 dark:text-zinc-100 min-w-0"
+                  />
+                ) : (
+                  <span
+                    className="text-sm truncate flex-1 dark:text-zinc-200"
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setRenamingNoteId(note.id);
+                      setRenameVal(note.title || "Untitled");
+                    }}
+                  >
+                    {note.title || "Untitled"}
+                  </span>
+                )}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDeleteNoteConfirm(note.id);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 text-zinc-400 hover:text-red-500 ml-2 text-xs transition-opacity"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </aside>
 
       {/* File viewer + editor split */}
