@@ -450,7 +450,7 @@ function KeywordGraphView({
     graphLoadedRef.current = true;
     fetch(`/api/diagram-graph?notebookId=${notebookId}`)
       .then(r => r.json())
-      .then(({ manualEdges: me, edgeLabels: el, nodePositions: np }) => {
+      .then(({ manualEdges: me, edgeLabels: el }) => {
         if (me?.length) {
           setManualEdges(me);
         } else {
@@ -463,30 +463,27 @@ function KeywordGraphView({
           const stored = localStorage.getItem(`graph-edge-labels-${notebookId}`);
           if (stored) { try { setEdgeLabels(JSON.parse(stored)); } catch {} }
         }
-        if (np && Object.keys(np).length) {
-          setOverrides(np);
-        }
       })
       .catch(() => {});
   }, [notebookId]);
 
   // Debounced save to DB when edges or labels change
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSaveRef = useRef({ manualEdges, edgeLabels, nodePositions: overrides });
-  useEffect(() => { pendingSaveRef.current = { manualEdges, edgeLabels, nodePositions: overrides }; }, [manualEdges, edgeLabels, overrides]);
+  const pendingSaveRef = useRef({ manualEdges, edgeLabels });
+  useEffect(() => { pendingSaveRef.current = { manualEdges, edgeLabels }; }, [manualEdges, edgeLabels]);
   useEffect(() => {
     if (!graphLoadedRef.current) return;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
-      const { manualEdges: me, edgeLabels: el, nodePositions: np } = pendingSaveRef.current;
+      const { manualEdges: me, edgeLabels: el } = pendingSaveRef.current;
       fetch(`/api/diagram-graph?notebookId=${notebookId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ manualEdges: me, edgeLabels: el, nodePositions: allNotesModeRef.current ? np : undefined }),
+        body: JSON.stringify({ manualEdges: me, edgeLabels: el }),
       }).catch(() => {});
     }, 1500);
     return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
-  }, [manualEdges, edgeLabels, overrides, notebookId]);
+  }, [manualEdges, edgeLabels, notebookId]);
 
   // Remove edges/labels for deleted nodes
   useEffect(() => {
