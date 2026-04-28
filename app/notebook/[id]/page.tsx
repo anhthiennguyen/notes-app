@@ -655,6 +655,7 @@ export default function NotebookPage() {
 
   const { dark, toggle: toggleTheme } = useTheme();
   const [notes, setNotes] = useState<NoteMeta[]>([]);
+  const [noteSearch, setNoteSearch] = useState("");
   const [pendingScroll, setPendingScroll] = useState<string | null>(null);
   const [pendingNoteId, setPendingNoteId] = useState<number | null>(null);
   const [activeNote, setActiveNote] = useState<Note | null>(null);
@@ -1067,8 +1068,17 @@ export default function NotebookPage() {
             )}
           </div>
         </div>
+        <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-700">
+          <input
+            type="text"
+            placeholder="Search notes…"
+            value={noteSearch}
+            onChange={(e) => setNoteSearch(e.target.value)}
+            className="w-full text-sm px-2 py-1.5 rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-900 dark:text-zinc-200 placeholder-zinc-400 dark:placeholder-zinc-500 outline-none focus:border-zinc-500 dark:focus:border-zinc-400"
+          />
+        </div>
         <ul className="flex-1 overflow-y-auto">
-          {notes.map((note) => (
+          {notes.filter(n => !noteSearch || (n.title || "Untitled").toLowerCase().includes(noteSearch.toLowerCase())).map((note) => (
             <li
               key={note.id}
               onClick={() => renamingNoteId !== note.id && openNote(note.id)}
