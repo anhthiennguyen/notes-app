@@ -174,9 +174,11 @@ export default function Home() {
 
   async function downloadKeywords(id: number, name: string) {
     try {
-      const res = await fetch(`/api/diagram-keywords?notebookId=${id}`);
-      const keywords = await res.json();
-      const blob = new Blob([JSON.stringify(keywords, null, 2)], { type: "application/json" });
+      const [keywords, categories] = await Promise.all([
+        fetch(`/api/diagram-keywords?notebookId=${id}`).then((r) => r.json()),
+        fetch(`/api/diagram-categories?notebookId=${id}`).then((r) => r.json()),
+      ]);
+      const blob = new Blob([JSON.stringify({ keywords, categories }, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

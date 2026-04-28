@@ -1049,21 +1049,33 @@ export default function DiagramPage() {
         const override = clusterOverridesRef.current[kw.id];
         return { ...kw, x: override?.x ?? kw.x ?? null, y: override?.y ?? kw.y ?? null };
       });
-      Promise.all([
-        fetch(`/api/diagram-keywords?notebookId=${notebookId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(withPositions),
-        }),
-        fetch(`/api/diagram-categories?notebookId=${notebookId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(categoriesRef.current),
-        }),
-      ]).then(([kwRes]) => {
-        if (!kwRes.ok) { alert("Save failed — check console for details."); return; }
-        setKwDirty(false);
-      }).catch((e) => alert("Save error: " + e));
+      (async () => {
+        try {
+          const catRes = await fetch(`/api/diagram-categories?notebookId=${notebookId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(categoriesRef.current),
+          });
+          if (!catRes.ok) {
+            const body = await catRes.text().catch(() => catRes.statusText);
+            alert("Categories save failed: " + body);
+            return;
+          }
+          const kwRes = await fetch(`/api/diagram-keywords?notebookId=${notebookId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(withPositions),
+          });
+          if (!kwRes.ok) {
+            const body = await kwRes.text().catch(() => kwRes.statusText);
+            alert("Keywords save failed: " + body);
+            return;
+          }
+          setKwDirty(false);
+        } catch (e) {
+          alert("Save error: " + e);
+        }
+      })();
     };
     const canvas = canvasRef.current;
     if (canvas) {
@@ -1234,7 +1246,7 @@ export default function DiagramPage() {
   }
 
   function exportKeywords() {
-    const data = JSON.stringify(customKeywords, null, 2);
+    const data = JSON.stringify({ keywords: customKeywords, categories: categoriesRef.current }, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -1248,24 +1260,44 @@ export default function DiagramPage() {
 
   function importKeywords(file: File) {
     const reader = new FileReader();
+    reader.onerror = () => alert("Failed to read file.");
     reader.onload = (e) => {
       try {
         const parsed = JSON.parse(e.target?.result as string);
-        if (!Array.isArray(parsed)) { alert("Invalid keywords file."); return; }
-        const imported: CustomKeyword[] = parsed.map((k, i) => ({
+
+        // Support both new {keywords, categories} format and legacy keyword-only array
+        const rawKeywords: unknown[] = Array.isArray(parsed) ? parsed : (parsed?.keywords ?? []);
+        const rawCategories: unknown[] = Array.isArray(parsed) ? [] : (parsed?.categories ?? []);
+
+        if (!Array.isArray(rawKeywords)) { alert("Invalid keywords file."); return; }
+
+        const importedCategories = rawCategories.map((c: any) => ({
+          id: c.id ?? crypto.randomUUID(),
+          name: c.name ?? "Unnamed",
+          order: c.order ?? 0,
+          parentId: c.parentId ?? null,
+          notebookId: c.notebookId ?? null,
+        }));
+
+        const validCategoryIds = new Set(importedCategories.map((c) => c.id));
+        const importedKeywords: CustomKeyword[] = rawKeywords.map((k: any, i) => ({
           id: k.id ?? crypto.randomUUID(),
           text: k.text ?? "",
           color: k.color ?? "#888888",
-          hidden: k.hidden ?? false,
           x: k.x ?? null,
           y: k.y ?? null,
-          categoryId: k.categoryId ?? null,
+          categoryId: k.categoryId && validCategoryIds.has(k.categoryId) ? k.categoryId : null,
           order: k.order ?? i,
         })).filter((k) => k.text.trim());
-        setCustomKeywords(imported);
+
+        if (importedKeywords.length === 0) { alert("No keywords found in file."); return; }
+
+        if (importedCategories.length > 0) setCategories(importedCategories);
+        setCustomKeywords(importedKeywords);
         setKwDirty(true);
-      } catch {
-        alert("Failed to parse keywords file.");
+        alert(`Imported ${importedKeywords.length} keywords and ${importedCategories.length} categories — click Save to persist.`);
+      } catch (err) {
+        alert("Failed to parse keywords file: " + err);
       }
     };
     reader.readAsText(file);
