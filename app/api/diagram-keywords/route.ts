@@ -25,7 +25,16 @@ export async function PUT(req: NextRequest) {
     }
     for (const kw of keywords) {
       await prisma.diagramKeyword.create({
-        data: { ...kw, ...(notebookId && { notebookId: Number(notebookId) }) },
+        data: {
+          id: kw.id,
+          text: kw.text,
+          color: kw.color,
+          order: kw.order ?? 0,
+          x: kw.x ?? null,
+          y: kw.y ?? null,
+          categoryId: kw.categoryId ?? null,
+          ...(notebookId && { notebookId: Number(notebookId) }),
+        },
       });
     }
     return NextResponse.json({ ok: true });

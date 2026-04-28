@@ -1045,7 +1045,7 @@ export default function DiagramPage() {
     customKeywordsRef.current = customKeywords;
     // Keep save callback up to date with latest keywords
     saveCallbackRef.current = () => {
-      const withPositions = customKeywordsRef.current.map((kw) => {
+      const withPositions = customKeywordsRef.current.map(({ hidden: _h, ...kw }) => {
         const override = clusterOverridesRef.current[kw.id];
         return { ...kw, x: override?.x ?? kw.x ?? null, y: override?.y ?? kw.y ?? null };
       });
@@ -1060,7 +1060,10 @@ export default function DiagramPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(categoriesRef.current),
         }),
-      ]).then(() => setKwDirty(false));
+      ]).then(([kwRes]) => {
+        if (!kwRes.ok) { alert("Save failed — check console for details."); return; }
+        setKwDirty(false);
+      }).catch((e) => alert("Save error: " + e));
     };
     const canvas = canvasRef.current;
     if (canvas) {
