@@ -13,9 +13,11 @@ model Notebook {
   coverImage      String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
-  notes           Note[]
-  diagramKeywords DiagramKeyword[]
-  categories      Category[]
+  notes             Note[]
+  diagramKeywords   DiagramKeyword[]
+  categories        Category[]
+  graphManualEdges  String           @default("[]")
+  graphEdgeLabels   String           @default("{}")
 }
 
 model Category {

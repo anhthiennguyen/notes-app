@@ -285,31 +285,60 @@ function wrapLabel(text: string, radius: number): string[] {
 
 // ── Keyword co-occurrence graph ───────────────────────────────────────────────
 
+type GNode =
+  | { id: string; kind: "keyword"; kw: CustomKeyword }
+  | { id: string; kind: "category"; cat: CategoryData };
+
 function KeywordGraphView({
   keywords,
+  categories,
   bubbles,
   dark,
   size,
+  notebookId,
 }: {
   keywords: CustomKeyword[];
+  categories: CategoryData[];
   bubbles: Bubble[];
   dark: boolean;
   size: { w: number; h: number };
+  notebookId: number;
 }) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 60, y: 60 });
   const [overrides, setOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const panStartRef = useRef<{ mx: number; my: number; px: number; py: number } | null>(null);
-  const dragRef = useRef<{ id: string; mx: number; my: number; ox: number; oy: number } | null>(null);
+  const dragRef = useRef<{ anchor: string; mx: number; my: number; initialPositions: Record<string, { x: number; y: number }>; hasMoved: boolean } | null>(null);
+  const [manualEdges, setManualEdges] = useState<[string, string][]>([]);
+  const [linkMode, setLinkMode] = useState(false);
+  const [pendingNode, setPendingNode] = useState<string | null>(null);
+  const [edgeLabels, setEdgeLabels] = useState<Record<string, string>>({});
+  const [editingEdge, setEditingEdge] = useState<{ key: string; x: number; y: number; value: string } | null>(null);
+  const [graphTool, setGraphTool] = useState<"hand" | "select">("hand");
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+  const [graphSelRect, setGraphSelRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const graphToolRef = useRef<"hand" | "select">("hand");
+  const graphSelStartRef = useRef<{ x: number; y: number } | null>(null);
+  const containerDivRef = useRef<HTMLDivElement>(null);
 
-  const { nodes, edges, basePositions } = useMemo(() => {
-    if (!keywords.length) return { nodes: keywords, edges: [] as [string, string][], basePositions: {} as Record<string, { x: number; y: number }> };
+  useEffect(() => { graphToolRef.current = graphTool; }, [graphTool]);
+
+  function edgeKey(a: string, b: string) { return [a, b].sort().join("::"); }
+
+  const { nodes, edges, kwCatPairs, basePositions } = useMemo(() => {
+    const allNodes: GNode[] = [
+      ...categories.map(c => ({ id: c.id, kind: "category" as const, cat: c })),
+      ...keywords.map(k => ({ id: k.id, kind: "keyword" as const, kw: k })),
+    ];
+    if (!allNodes.length) return { nodes: [] as GNode[], edges: [] as [string, string][], kwCatPairs: [] as [string, string][], basePositions: {} as Record<string, { x: number; y: number }> };
 
     const boldLabels = bubbles.filter(b => b.nodeType === "bold").map(b => b.label.toLowerCase());
 
     // Build adjacency
     const adj = new Map<string, Set<string>>();
-    keywords.forEach(kw => adj.set(kw.id, new Set()));
+    allNodes.forEach(n => adj.set(n.id, new Set()));
+
+    // Co-occurrence edges between keywords
     for (const label of boldLabels) {
       const hit = keywords.filter(kw => label.includes(kw.text.toLowerCase()));
       for (let i = 0; i < hit.length; i++)
@@ -319,14 +348,35 @@ function KeywordGraphView({
         }
     }
 
+    // Build a set of valid category IDs for fast lookup
+    const catIdSet = new Set(categories.map(c => c.id));
+
+    // keyword → category edges
+    const kwCatPairs: [string, string][] = [];
+    for (const kw of keywords) {
+      if (kw.categoryId && catIdSet.has(kw.categoryId)) {
+        adj.get(kw.id)!.add(kw.categoryId);
+        adj.get(kw.categoryId)!.add(kw.id);
+        kwCatPairs.push([kw.id, kw.categoryId]);
+      }
+    }
+
+    // category → parent category edges
+    for (const cat of categories) {
+      if (cat.parentId && catIdSet.has(cat.parentId)) {
+        adj.get(cat.id)!.add(cat.parentId);
+        adj.get(cat.parentId)!.add(cat.id);
+      }
+    }
+
     // Connected components
     const visited = new Set<string>();
     const components: string[][] = [];
-    for (const kw of keywords) {
-      if (visited.has(kw.id)) continue;
+    for (const n of allNodes) {
+      if (visited.has(n.id)) continue;
       const comp: string[] = [];
-      const q = [kw.id];
-      visited.add(kw.id);
+      const q = [n.id];
+      visited.add(n.id);
       while (q.length) {
         const id = q.shift()!;
         comp.push(id);
@@ -360,7 +410,7 @@ function KeywordGraphView({
     // d3.tree layout per component
     type TN = { id: string; children: TN[] };
     function buildTree(rootId: string): TN {
-      return { id: rootId, children: keywords.filter(k => parentMap.get(k.id) === rootId).map(k => buildTree(k.id)) };
+      return { id: rootId, children: allNodes.filter(n => parentMap.get(n.id) === rootId).map(n => buildTree(n.id)) };
     }
 
     const NODE_W = 140, NODE_H = 100;
@@ -381,50 +431,205 @@ function KeywordGraphView({
       xOffset += maxX - minX + NODE_W * 1.6;
     }
 
-    // Isolated nodes in a column to the right
     isolated.forEach((id, i) => {
       basePositions[id] = { x: xOffset + NODE_W * 0.5, y: 60 + i * 80 };
     });
 
-    return { nodes: keywords, edges: spanEdges, basePositions };
-  }, [keywords, bubbles]);
+    return { nodes: allNodes, edges: spanEdges, kwCatPairs, basePositions };
+  }, [keywords, categories, bubbles]);
 
-  useEffect(() => { setOverrides({}); }, [keywords]);
+  useEffect(() => { setOverrides({}); }, [keywords, categories]);
+
+  // Load graph edges from DB on mount; migrate from localStorage if DB is empty
+  const graphLoadedRef = useRef(false);
+  useEffect(() => {
+    if (graphLoadedRef.current) return;
+    graphLoadedRef.current = true;
+    fetch(`/api/diagram-graph?notebookId=${notebookId}`)
+      .then(r => r.json())
+      .then(({ manualEdges: me, edgeLabels: el }) => {
+        if (me?.length) {
+          setManualEdges(me);
+        } else {
+          // Migrate from localStorage if present
+          const stored = localStorage.getItem(`graph-manual-edges-${notebookId}`);
+          if (stored) { try { setManualEdges(JSON.parse(stored)); } catch {} }
+        }
+        if (el && Object.keys(el).length) {
+          setEdgeLabels(el);
+        } else {
+          const stored = localStorage.getItem(`graph-edge-labels-${notebookId}`);
+          if (stored) { try { setEdgeLabels(JSON.parse(stored)); } catch {} }
+        }
+      })
+      .catch(() => {});
+  }, [notebookId]);
+
+  // Debounced save to DB when edges or labels change
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef({ manualEdges, edgeLabels });
+  useEffect(() => { pendingSaveRef.current = { manualEdges, edgeLabels }; }, [manualEdges, edgeLabels]);
+  useEffect(() => {
+    if (!graphLoadedRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      const { manualEdges: me, edgeLabels: el } = pendingSaveRef.current;
+      fetch(`/api/diagram-graph?notebookId=${notebookId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ manualEdges: me, edgeLabels: el }),
+      }).catch(() => {});
+    }, 1500);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [manualEdges, edgeLabels, notebookId]);
+
+  // Remove edges/labels for deleted nodes
+  useEffect(() => {
+    const allIds = new Set([...keywords.map(k => k.id), ...categories.map(c => c.id)]);
+    setManualEdges(prev => prev.filter(([a, b]) => allIds.has(a) && allIds.has(b)));
+    setEdgeLabels(prev => {
+      const next: Record<string, string> = {};
+      for (const [k, v] of Object.entries(prev)) {
+        const [a, b] = k.split("::");
+        if (allIds.has(a) && allIds.has(b)) next[k] = v;
+      }
+      return next;
+    });
+  }, [keywords, categories]);
 
   function getPos(id: string) { return overrides[id] ?? basePositions[id] ?? { x: 0, y: 0 }; }
 
+  function openEdgeLabel(e: React.MouseEvent, a: string, b: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = containerDivRef.current?.getBoundingClientRect();
+    const x = e.clientX - (rect?.left ?? 0);
+    const y = e.clientY - (rect?.top ?? 0);
+    const key = edgeKey(a, b);
+    setEditingEdge({ key, x, y, value: edgeLabels[key] ?? "" });
+  }
+
   function onBgDown(e: React.MouseEvent) {
+    if (editingEdge) { setEditingEdge(null); return; }
     if (e.button !== 0) return;
-    panStartRef.current = { mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y };
+    if (graphToolRef.current === "select") {
+      const r = containerDivRef.current?.getBoundingClientRect();
+      graphSelStartRef.current = { x: e.clientX - (r?.left ?? 0), y: e.clientY - (r?.top ?? 0) };
+    } else {
+      panStartRef.current = { mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y };
+    }
   }
   function onNodeDown(e: React.MouseEvent, id: string) {
     e.stopPropagation();
-    const pos = getPos(id);
-    dragRef.current = { id, mx: e.clientX, my: e.clientY, ox: pos.x, oy: pos.y };
+    if (linkMode) {
+      if (pendingNode === null) {
+        setPendingNode(id);
+      } else if (pendingNode === id) {
+        setPendingNode(null);
+      } else {
+        const a = pendingNode, b = id;
+        setManualEdges(prev => {
+          const exists = prev.some(([ea, eb]) => (ea === a && eb === b) || (ea === b && eb === a));
+          return exists ? prev.filter(([ea, eb]) => !((ea === a && eb === b) || (ea === b && eb === a))) : [...prev, [a, b]];
+        });
+        setPendingNode(null);
+      }
+      return;
+    }
+    const isSelected = selectedNodeIds.has(id);
+    const dragIds = isSelected ? [...selectedNodeIds] : [id];
+    const initialPositions: Record<string, { x: number; y: number }> = {};
+    for (const nid of dragIds) initialPositions[nid] = getPos(nid);
+    dragRef.current = { anchor: id, mx: e.clientX, my: e.clientY, initialPositions, hasMoved: false };
   }
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
     if (dragRef.current) {
-      const { id, mx, my, ox, oy } = dragRef.current;
-      setOverrides(p => ({ ...p, [id]: { x: ox + (e.clientX - mx) / zoom, y: oy + (e.clientY - my) / zoom } }));
+      dragRef.current.hasMoved = true;
+      const { mx, my, initialPositions } = dragRef.current;
+      const dx = (e.clientX - mx) / zoom;
+      const dy = (e.clientY - my) / zoom;
+      setOverrides(p => {
+        const next = { ...p };
+        for (const [nid, pos] of Object.entries(initialPositions)) next[nid] = { x: pos.x + dx, y: pos.y + dy };
+        return next;
+      });
+    } else if (graphSelStartRef.current) {
+      const r = containerDivRef.current?.getBoundingClientRect();
+      const cx = e.clientX - (r?.left ?? 0);
+      const cy = e.clientY - (r?.top ?? 0);
+      const { x: sx, y: sy } = graphSelStartRef.current;
+      setGraphSelRect({ x: Math.min(sx, cx), y: Math.min(sy, cy), w: Math.abs(cx - sx), h: Math.abs(cy - sy) });
     } else if (panStartRef.current) {
       const { mx, my, px, py } = panStartRef.current;
       setPan({ x: px + e.clientX - mx, y: py + e.clientY - my });
     }
   }
-  function onUp() { dragRef.current = null; panStartRef.current = null; }
+  function onUp() {
+    if (graphSelStartRef.current) {
+      const rect = graphSelRect;
+      setGraphSelRect(null);
+      if (rect && rect.w > 4 && rect.h > 4) {
+        const minX = (rect.x - pan.x) / zoom;
+        const minY = (rect.y - pan.y) / zoom;
+        const maxX = (rect.x + rect.w - pan.x) / zoom;
+        const maxY = (rect.y + rect.h - pan.y) / zoom;
+        const next = new Set<string>();
+        for (const node of nodes) {
+          if (!basePositions[node.id]) continue;
+          const { x: nx, y: ny } = getPos(node.id);
+          if (nx >= minX && nx <= maxX && ny >= minY && ny <= maxY) next.add(node.id);
+        }
+        setSelectedNodeIds(next);
+      } else {
+        setSelectedNodeIds(new Set());
+      }
+      graphSelStartRef.current = null;
+    }
+    if (dragRef.current && !dragRef.current.hasMoved && graphToolRef.current === "select") {
+      const { anchor } = dragRef.current;
+      setSelectedNodeIds(prev => {
+        const next = new Set(prev);
+        if (next.has(anchor)) next.delete(anchor);
+        else { next.clear(); next.add(anchor); }
+        return next;
+      });
+    }
+    dragRef.current = null;
+    panStartRef.current = null;
+  }
 
-  const isEmpty = !keywords.length || (!bubbles.filter(b => b.nodeType === "bold").length && !edges.length);
+  const isEmpty = nodes.length === 0;
 
   return (
-    <div className="relative w-full h-full overflow-hidden">
+    <div ref={containerDivRef} className="relative w-full h-full overflow-hidden">
       <svg
         width={size.w} height={size.h} className="w-full h-full select-none"
         onMouseMove={onMove} onMouseUp={onUp} onMouseLeave={onUp}
         onWheel={(e) => { e.preventDefault(); setZoom(z => Math.min(3, Math.max(0.25, +(z * (e.deltaY < 0 ? 1.1 : 0.9)).toFixed(3)))); }}
       >
-        <rect width={size.w} height={size.h} fill="transparent" style={{ cursor: "grab" }} onMouseDown={onBgDown} />
+        <rect width={size.w} height={size.h} fill="transparent" style={{ cursor: graphTool === "select" ? "crosshair" : "grab" }} onMouseDown={onBgDown} />
         <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
+          {/* Keyword → category structural edges: always rendered explicitly */}
+          {kwCatPairs.map(([kwId, catId]) => {
+            if (!basePositions[kwId] || !basePositions[catId]) return null;
+            const pa = getPos(kwId), pb = getPos(catId);
+            return (
+              <path
+                key={`kc-${kwId}`}
+                d={`M${pa.x},${pa.y} C${pa.x},${(pa.y + pb.y) / 2} ${pb.x},${(pa.y + pb.y) / 2} ${pb.x},${pb.y}`}
+                fill="none"
+                stroke={dark ? "#3f3f46" : "#d4d4d8"}
+                strokeWidth={2}
+                className="cursor-context-menu"
+                onContextMenu={(e) => openEdgeLabel(e, kwId, catId)}
+              />
+            );
+          })}
+          {/* Co-occurrence spanning-tree edges */}
           {edges.map(([a, b]) => {
+            // Skip keyword→category pairs — already drawn above
+            const isKwCat = kwCatPairs.some(([k, c]) => (a === k && b === c) || (a === c && b === k));
+            if (isKwCat) return null;
             const pa = getPos(a), pb = getPos(b);
             return (
               <path
@@ -433,17 +638,58 @@ function KeywordGraphView({
                 fill="none"
                 stroke={dark ? "#52525b" : "#d4d4d8"}
                 strokeWidth={2}
+                className="cursor-context-menu"
+                onContextMenu={(e) => openEdgeLabel(e, a, b)}
               />
             );
           })}
-          {nodes.map(kw => {
-            if (!basePositions[kw.id]) return null;
-            const { x, y } = getPos(kw.id);
+          {manualEdges.map(([a, b]) => {
+            const pa = getPos(a), pb = getPos(b);
+            if (!pa || !pb) return null;
+            return (
+              <path
+                key={`manual-${a}-${b}`}
+                d={`M${pa.x},${pa.y} C${pa.x},${(pa.y + pb.y) / 2} ${pb.x},${(pa.y + pb.y) / 2} ${pb.x},${pb.y}`}
+                fill="none"
+                stroke={dark ? "#a1a1aa" : "#71717a"}
+                strokeWidth={2}
+                strokeDasharray="5 3"
+                className="cursor-pointer"
+                onClick={() => setManualEdges(prev => prev.filter(([ea, eb]) => !((ea === a && eb === b) || (ea === b && eb === a))))}
+                onContextMenu={(e) => openEdgeLabel(e, a, b)}
+              />
+            );
+          })}
+          {nodes.map(node => {
+            if (!basePositions[node.id]) return null;
+            const { x, y } = getPos(node.id);
+            const isPending = node.id === pendingNode;
+            const cur = linkMode ? "crosshair" : "grab";
+
+            if (node.kind === "category") {
+              const { cat } = node;
+              const maxChars = 15;
+              const display = cat.name.length > maxChars ? cat.name.slice(0, maxChars - 1) + "…" : cat.name;
+              const w = Math.max(72, display.length * 6.5 + 20);
+              const h = 28;
+              return (
+                <g key={cat.id} transform={`translate(${x},${y})`} onMouseDown={(e) => onNodeDown(e, cat.id)} style={{ cursor: cur }}>
+                  {selectedNodeIds.has(cat.id) && <rect x={-(w / 2 + 5)} y={-(h / 2 + 5)} width={w + 10} height={h + 10} rx={9} fill="rgba(59,130,246,0.1)" stroke="#3b82f6" strokeWidth={2} />}
+                  {isPending && <rect x={-(w / 2 + 5)} y={-(h / 2 + 5)} width={w + 10} height={h + 10} rx={9} fill="none" stroke={dark ? "#a1a1aa" : "#71717a"} strokeWidth={2} strokeDasharray="4 3" opacity={0.8} />}
+                  <rect x={-w / 2} y={-h / 2} width={w} height={h} rx={6} fill={dark ? "#27272a" : "#f4f4f5"} stroke={dark ? "#71717a" : "#a1a1aa"} strokeWidth={2} />
+                  <text textAnchor="middle" dominantBaseline="middle" fontSize={11} fontWeight={700} fill={dark ? "#e4e4e7" : "#3f3f46"}>{display}</text>
+                </g>
+              );
+            }
+
+            const { kw } = node;
             const words = kw.text.split(" ");
             const line1 = words.slice(0, Math.ceil(words.length / 2)).join(" ");
             const line2 = words.slice(Math.ceil(words.length / 2)).join(" ");
             return (
-              <g key={kw.id} transform={`translate(${x},${y})`} onMouseDown={(e) => onNodeDown(e, kw.id)} style={{ cursor: "grab" }}>
+              <g key={kw.id} transform={`translate(${x},${y})`} onMouseDown={(e) => onNodeDown(e, kw.id)} style={{ cursor: cur }}>
+                {selectedNodeIds.has(kw.id) && <circle r={37} fill="rgba(59,130,246,0.1)" stroke="#3b82f6" strokeWidth={2} />}
+                {isPending && <circle r={38} fill="none" stroke={kw.color} strokeWidth={2} strokeDasharray="4 3" opacity={0.8} />}
                 <circle r={32} fill={kw.color} fillOpacity={0.15} stroke={kw.color} strokeWidth={2} />
                 {line2 ? (
                   <>
@@ -456,14 +702,147 @@ function KeywordGraphView({
               </g>
             );
           })}
+          {/* Edge relation labels (auto + manual edges) */}
+          {([...edges, ...manualEdges] as [string, string][]).map(([a, b]) => {
+            const key = edgeKey(a, b);
+            const label = edgeLabels[key];
+            if (!label) return null;
+            const pa = getPos(a), pb = getPos(b);
+            const mx = (pa.x + pb.x) / 2;
+            const my = (pa.y + pb.y) / 2;
+            const pad = 5;
+            const approxW = label.length * 5.5 + pad * 2;
+            return (
+              <g key={`lbl-${key}`} onContextMenu={(e) => openEdgeLabel(e, a, b)} className="cursor-context-menu">
+                <rect
+                  x={mx - approxW / 2} y={my - 9} width={approxW} height={18} rx={4}
+                  fill={dark ? "#27272a" : "#ffffff"}
+                  stroke={dark ? "#52525b" : "#d4d4d8"}
+                  strokeWidth={1}
+                />
+                <text
+                  x={mx} y={my}
+                  textAnchor="middle" dominantBaseline="middle"
+                  fontSize={10} fill={dark ? "#d4d4d8" : "#52525b"}
+                  style={{ pointerEvents: "none" }}
+                >{label}</text>
+              </g>
+            );
+          })}
         </g>
       </svg>
 
       {isEmpty && (
         <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400 dark:text-zinc-500 gap-2 pointer-events-none">
-          <p className="text-sm">No keyword connections yet</p>
-          <p className="text-xs">Keywords connect when bold text in a note contains both of them</p>
+          <p className="text-sm">No nodes yet</p>
+          <p className="text-xs">Add keywords or categories to build a graph</p>
         </div>
+      )}
+
+      {editingEdge && (
+        <div
+          className="absolute z-50 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl p-3 flex flex-col gap-2"
+          style={{ left: editingEdge.x, top: editingEdge.y, minWidth: 220 }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Relation label</p>
+          <input
+            autoFocus
+            type="text"
+            value={editingEdge.value}
+            onChange={(e) => setEditingEdge(prev => prev ? { ...prev, value: e.target.value } : null)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const { key, value } = editingEdge;
+                if (value.trim()) setEdgeLabels(prev => ({ ...prev, [key]: value.trim() }));
+                else setEdgeLabels(prev => { const n = { ...prev }; delete n[key]; return n; });
+                setEditingEdge(null);
+              } else if (e.key === "Escape") {
+                setEditingEdge(null);
+              }
+            }}
+            placeholder="e.g. causes, uses, has, is part of…"
+            className="text-sm px-2 py-1.5 border border-zinc-200 dark:border-zinc-600 rounded bg-white dark:bg-zinc-900 text-zinc-800 dark:text-zinc-100 outline-none focus:ring-1 focus:ring-zinc-400 dark:focus:ring-zinc-500"
+          />
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => {
+                const { key, value } = editingEdge;
+                if (value.trim()) setEdgeLabels(prev => ({ ...prev, [key]: value.trim() }));
+                else setEdgeLabels(prev => { const n = { ...prev }; delete n[key]; return n; });
+                setEditingEdge(null);
+              }}
+              className="flex-1 text-xs px-2 py-1 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded font-medium"
+            >Save</button>
+            {edgeLabels[editingEdge.key] && (
+              <button
+                onClick={() => {
+                  setEdgeLabels(prev => { const n = { ...prev }; delete n[editingEdge.key]; return n; });
+                  setEditingEdge(null);
+                }}
+                className="text-xs px-2 py-1 text-red-500 dark:text-red-400 border border-red-200 dark:border-red-800 rounded"
+              >Clear</button>
+            )}
+            <button
+              onClick={() => setEditingEdge(null)}
+              className="text-xs px-2 py-1 text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300"
+            >✕</button>
+          </div>
+        </div>
+      )}
+
+      <div className="absolute top-3 left-3 flex items-center gap-1.5">
+        {/* Hand / select tool group */}
+        <div className="flex items-center gap-0.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg p-1 shadow-sm">
+          <button
+            onClick={() => setGraphTool("hand")}
+            title="Hand tool (pan)"
+            className={`p-1.5 rounded transition-colors ${graphTool === "hand" ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900" : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"}`}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 1v7M5.5 3.5V7M3 5.5V9a5 5 0 0 0 10 0V7M10.5 3.5V7M13 6v2" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setGraphTool("select")}
+            title="Selection tool (marquee drag)"
+            className={`p-1.5 rounded transition-colors ${graphTool === "select" ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900" : "text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-700"}`}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="2" y="2" width="12" height="12" rx="1" strokeDasharray="3 2" />
+            </svg>
+          </button>
+        </div>
+        {/* Link mode button */}
+        <button
+          onClick={() => { setLinkMode(m => !m); setPendingNode(null); }}
+          title={linkMode ? "Exit link mode" : "Draw/remove manual links"}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs font-medium border transition-colors shadow-sm ${
+            linkMode
+              ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-900 dark:border-zinc-100"
+              : "bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700"
+          }`}
+        >
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <circle cx="2" cy="6" r="1.5" /><circle cx="10" cy="2" r="1.5" /><circle cx="10" cy="10" r="1.5" />
+            <line x1="3.4" y1="5.3" x2="8.6" y2="2.7" /><line x1="3.4" y1="6.7" x2="8.6" y2="9.3" />
+          </svg>
+          {linkMode ? (pendingNode ? "click another node" : "click a node") : "Link"}
+        </button>
+      </div>
+
+      {/* Marquee selection rect */}
+      {graphSelRect && (
+        <svg className="absolute inset-0 w-full h-full pointer-events-none">
+          <rect
+            x={graphSelRect.x} y={graphSelRect.y}
+            width={graphSelRect.w} height={graphSelRect.h}
+            fill="rgba(59,130,246,0.08)"
+            stroke="#3b82f6"
+            strokeWidth={1.5}
+            strokeDasharray="5 3"
+          />
+        </svg>
       )}
 
       <div className="absolute bottom-4 left-4 flex items-center gap-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg px-3 py-2 shadow-sm">
@@ -471,7 +850,7 @@ function KeywordGraphView({
         <input type="range" min={0.25} max={3} step={0.05} value={zoom} onChange={(e) => setZoom(+e.target.value)} className="w-24 accent-zinc-600 dark:accent-zinc-400 cursor-pointer" />
         <button onClick={() => setZoom(z => Math.min(3, +(z + 0.1).toFixed(2)))} className="text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-100 text-sm leading-none select-none">+</button>
         <span className="text-xs text-zinc-400 dark:text-zinc-500 w-8 text-right tabular-nums">{Math.round(zoom * 100)}%</span>
-        <button onClick={() => { setZoom(1); setPan({ x: 60, y: 60 }); setOverrides({}); }} className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors" title="Reset view">↺</button>
+        <button onClick={() => { setZoom(1); setPan({ x: 60, y: 60 }); setOverrides({}); setSelectedNodeIds(new Set()); }} className="text-xs text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors" title="Reset view">↺</button>
       </div>
     </div>
   );
@@ -1591,7 +1970,7 @@ export default function DiagramPage() {
         </div>
 
         {activeTab === "graph" ? (
-          <KeywordGraphView keywords={customKeywords} bubbles={bubbles} dark={dark} size={size} />
+          <KeywordGraphView keywords={customKeywords} categories={categories} bubbles={bubbles} dark={dark} size={size} notebookId={notebookId} />
         ) : (activeNote || allNotesMode) ? (
           <svg ref={svgRef} width={size.w} height={size.h} className="w-full h-full" />
         ) : (
