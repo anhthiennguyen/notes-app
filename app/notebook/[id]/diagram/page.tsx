@@ -322,8 +322,10 @@ function KeywordGraphView({
   const graphToolRef = useRef<"hand" | "select">("hand");
   const graphSelStartRef = useRef<{ x: number; y: number } | null>(null);
   const containerDivRef = useRef<HTMLDivElement>(null);
+  const allNotesModeRef = useRef(allNotesMode);
 
   useEffect(() => { graphToolRef.current = graphTool; }, [graphTool]);
+  useEffect(() => { allNotesModeRef.current = allNotesMode; }, [allNotesMode]);
 
   function edgeKey(a: string, b: string) { return [a, b].sort().join("::"); }
 
@@ -500,7 +502,7 @@ function KeywordGraphView({
     });
   }, [keywords, categories]);
 
-  function getPos(id: string) { return overrides[id] ?? basePositions[id] ?? { x: 0, y: 0 }; }
+  function getPos(id: string) { return (allNotesMode ? overrides[id] : undefined) ?? basePositions[id] ?? { x: 0, y: 0 }; }
 
   function openEdgeLabel(e: React.MouseEvent, a: string, b: string) {
     e.preventDefault();
@@ -548,14 +550,16 @@ function KeywordGraphView({
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
     if (dragRef.current) {
       dragRef.current.hasMoved = true;
-      const { mx, my, initialPositions } = dragRef.current;
-      const dx = (e.clientX - mx) / zoom;
-      const dy = (e.clientY - my) / zoom;
-      setOverrides(p => {
-        const next = { ...p };
-        for (const [nid, pos] of Object.entries(initialPositions)) next[nid] = { x: pos.x + dx, y: pos.y + dy };
-        return next;
-      });
+      if (allNotesModeRef.current) {
+        const { mx, my, initialPositions } = dragRef.current;
+        const dx = (e.clientX - mx) / zoom;
+        const dy = (e.clientY - my) / zoom;
+        setOverrides(p => {
+          const next = { ...p };
+          for (const [nid, pos] of Object.entries(initialPositions)) next[nid] = { x: pos.x + dx, y: pos.y + dy };
+          return next;
+        });
+      }
     } else if (graphSelStartRef.current) {
       const r = containerDivRef.current?.getBoundingClientRect();
       const cx = e.clientX - (r?.left ?? 0);
