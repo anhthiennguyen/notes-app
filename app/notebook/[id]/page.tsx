@@ -581,23 +581,35 @@ function YoutubeNodeView({ node, updateAttributes }: {
   const videoId = getYoutubeVideoId(node.attrs.src);
   const embedSrc = videoId ? `https://www.youtube.com/embed/${videoId}` : "";
 
+  const watchUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : node.attrs.src;
+
   return (
     <NodeViewWrapper>
-      <div style={{ position: "relative", display: "inline-block", maxWidth: "100%" }}>
-        <div
-          ref={overlayRef}
-          style={{ position: "absolute", inset: 0, zIndex: 1 }}
-          onMouseDown={(e) => {
-            if (e.button !== 0 || !overlayRef.current) return;
-            overlayRef.current.style.pointerEvents = "none";
-            setTimeout(() => { if (overlayRef.current) overlayRef.current.style.pointerEvents = ""; }, 300);
-          }}
-          onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
-        />
-        {embedSrc && (
-          <iframe src={embedSrc} width={640} height={360} frameBorder="0"
-            allow="autoplay; clipboard-write; encrypted-media; picture-in-picture" allowFullScreen />
-        )}
+      <div style={{ display: "inline-block", maxWidth: "100%" }}>
+        <a
+          href={watchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ display: "block", fontSize: "0.8rem", marginBottom: "4px", color: "inherit", opacity: 0.6 }}
+        >
+          {watchUrl}
+        </a>
+        <div style={{ position: "relative" }}>
+          <div
+            ref={overlayRef}
+            style={{ position: "absolute", inset: 0, zIndex: 1 }}
+            onMouseDown={(e) => {
+              if (e.button !== 0 || !overlayRef.current) return;
+              overlayRef.current.style.pointerEvents = "none";
+              setTimeout(() => { if (overlayRef.current) overlayRef.current.style.pointerEvents = ""; }, 300);
+            }}
+            onContextMenu={(e) => { e.preventDefault(); setCtxMenu({ x: e.clientX, y: e.clientY }); }}
+          />
+          {embedSrc && (
+            <iframe src={embedSrc} width={640} height={360} frameBorder="0"
+              allow="autoplay; clipboard-write; encrypted-media; picture-in-picture" allowFullScreen />
+          )}
+        </div>
       </div>
 
       {ctxMenu && createPortal(
