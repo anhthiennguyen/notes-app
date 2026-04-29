@@ -16,6 +16,21 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Notes",
   description: "Personal notes app",
+  icons: {
+    icon: "/notes.png",
+    apple: "/notes.png",
+  },
+  appleWebApp: {
+    capable: true,
+    title: "Notes",
+    statusBarStyle: "default",
+  },
+  openGraph: {
+    title: "Notes",
+    description: "Personal notes app",
+    images: ["/notes.png"],
+    type: "website",
+  },
 };
 
 export default function RootLayout({
