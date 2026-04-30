@@ -296,26 +296,16 @@ function Toolbar({
         accept="image/*,.heic,.heif"
         className="hidden"
         onChange={async (e) => {
-          let file = e.target.files?.[0];
+          const file = e.target.files?.[0];
           e.target.value = "";
           if (!file) return;
           try {
-            let src: string;
-            if (file.type === "image/heic" || file.type === "image/heif" || file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif")) {
-              const fd = new FormData();
-              fd.append("file", file);
-              const res = await fetch("/api/convert-heic", { method: "POST", body: fd });
-              const json = await res.json();
-              if (!res.ok) throw new Error(json.error ?? res.statusText);
-              ({ src } = json);
-            } else {
-              src = await new Promise<string>((resolve) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result as string);
-                reader.readAsDataURL(file as File);
-              });
-            }
-            editor.chain().focus().setImage({ src }).run();
+            const fd = new FormData();
+            fd.append("file", file);
+            const res = await fetch("/api/upload-image", { method: "POST", body: fd });
+            const json = await res.json();
+            if (!res.ok) throw new Error(json.error ?? res.statusText);
+            editor.chain().focus().setImage({ src: json.src }).run();
           } catch (err) {
             const msg = err && typeof err === "object" && "message" in err ? (err as { message: string }).message : String(err);
             alert(`Failed to load image: ${msg}`);
