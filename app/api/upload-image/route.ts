@@ -16,7 +16,6 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File | null;
     if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
 
-    let buffer = Buffer.from(await file.arrayBuffer());
     const isHeic = file.type === "image/heic" || file.type === "image/heif" ||
       file.name.toLowerCase().endsWith(".heic") || file.name.toLowerCase().endsWith(".heif");
 
@@ -24,20 +23,25 @@ export async function POST(req: NextRequest) {
       const inPath = `${tmp}.heic`;
       const outPath = `${tmp}.jpg`;
       try {
-        await writeFile(inPath, buffer);
+        await writeFile(inPath, Buffer.from(await file.arrayBuffer()));
         await execFileAsync("/usr/bin/sips", ["-s", "format", "jpeg", "-s", "formatOptions", "90", inPath, "--out", outPath]);
-        buffer = await readFile(outPath);
+        const buffer = await readFile(outPath);
+        const compressed = await sharp(buffer)
+          .resize({ width: 1920, height: 1920, fit: "inside", withoutEnlargement: true })
+          .flatten({ background: "#ffffff" })
+          .jpeg({ quality: 75 })
+          .toBuffer();
+        const src = `data:image/jpeg;base64,${compressed.toString("base64")}`;
+        return NextResponse.json({ src });
       } finally {
         await Promise.allSettled([unlink(inPath), unlink(outPath)]);
       }
     }
 
-    const compressed = await sharp(buffer)
-      .resize({ width: 1920, height: 1920, fit: "inside", withoutEnlargement: true })
-      .jpeg({ quality: 75 })
-      .toBuffer();
-
-    const src = `data:image/jpeg;base64,${compressed.toString("base64")}`;
+    // Non-HEIC: embed as-is
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const mimeType = file.type || "image/png";
+    const src = `data:${mimeType};base64,${buffer.toString("base64")}`;
     return NextResponse.json({ src });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

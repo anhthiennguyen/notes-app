@@ -17,14 +17,14 @@ for (const row of rows) {
   let content = row[1] ?? row.content;
   const original = content;
 
-  const matches = [...content.matchAll(/data:image\/(png|jpeg|jpg|gif|webp);base64,([^"]+)/g)];
+  const matches = [...content.matchAll(/src="(data:image\/(png|jpeg|jpg|gif|webp);base64,([^"]+))"/g)];
   if (!matches.length) continue;
 
   console.log(`Note ${id}: compressing ${matches.length} image(s)...`);
 
   for (const match of matches) {
-    const fullDataUrl = match[0];
-    const base64 = match[2];
+    const fullDataUrl = match[1];
+    const base64 = match[3];
     const buffer = Buffer.from(base64, "base64");
     const before = buffer.length;
 
