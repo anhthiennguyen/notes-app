@@ -103,6 +103,46 @@ function Toolbar({
     }
   }
 
+  function cleanUpBoldLines() {
+    if (!editor) return;
+    const { state } = editor;
+    const { doc } = state;
+
+    function nodeHasBold(node: any): boolean {
+      let found = false;
+      node.descendants((child: any) => {
+        if (child.isText && child.marks.some((m: any) => m.type.name === "bold")) {
+          found = true;
+        }
+      });
+      return found;
+    }
+
+    const blocks: Array<{ node: any; offset: number }> = [];
+    doc.forEach((node: any, offset: number) => {
+      if (node.type.name === "paragraph") blocks.push({ node, offset });
+    });
+
+    let tr = state.tr;
+    let modified = false;
+
+    // Process back to front so earlier positions stay valid
+    for (let i = blocks.length - 1; i > 0; i--) {
+      const curr = blocks[i];
+      const prev = blocks[i - 1];
+      // Only merge if they are actually adjacent in the doc
+      if (prev.offset + prev.node.nodeSize !== curr.offset) continue;
+      if (nodeHasBold(curr.node) && nodeHasBold(prev.node)) {
+        const spacePos = prev.offset + prev.node.nodeSize - 1;
+        tr = tr.insertText(" ", spacePos);
+        tr = tr.join(prev.offset + prev.node.nodeSize + 1);
+        modified = true;
+      }
+    }
+
+    if (modified) editor.view.dispatch(tr);
+  }
+
   const sel = "border border-zinc-300 dark:border-zinc-600 rounded px-2 py-1 text-sm bg-white dark:bg-zinc-800 dark:text-zinc-100 hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer outline-none";
   const btn = "px-3 py-1 rounded border border-zinc-300 dark:border-zinc-600 text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors dark:text-zinc-200";
 
@@ -288,6 +328,14 @@ function Toolbar({
         title="Insert image"
       >
         Image
+      </button>
+
+      <button
+        onClick={cleanUpBoldLines}
+        className={btn}
+        title="Merge consecutive bold paragraphs into one"
+      >
+        Clean Up
       </button>
 
       <div className="flex items-center gap-1">
